@@ -1,0 +1,858 @@
+/*
+   Double File Explorer - Theme Template
+   Colors are dynamically loaded from theme.json
+*/
+
+/* Global Styles - VS Code Inspired */
+QWidget {
+    background-color: {{bg}};
+    color: {{text}};
+    font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+    font-size: 10pt;
+}
+
+QMainWindow, QDialog, QMessageBox {
+    background-color: {{bg}};
+    color: {{text}};
+}
+
+QToolBar {
+    background-color: {{headerBg}};
+    border: none;
+    padding: 2px;
+    spacing: 5px;
+}
+
+QToolButton {
+    background-color: {{panelBg}};
+    color: {{text}};
+    border: 1px solid {{border}};
+    border-radius: 12px;
+    padding: 4px 12px;
+}
+
+QToolButton:hover {
+    background-color: {{activeTab}};
+    color: #ffffff;
+}
+
+QToolButton:pressed {
+    background-color: {{border}};
+}
+
+/* 自訂路徑按鈕：HoverButton(QPushButton) 統一為 QToolButton 樣式 */
+QPushButton#pathTriggerBtn {
+    background-color: {{panelBg}};
+    color: {{text}};
+    border: 1px solid {{border}};
+    border-radius: 12px;
+    padding: 4px 12px;
+    min-width: 0;
+}
+
+QPushButton#pathTriggerBtn:hover {
+    background-color: {{activeTab}};
+    color: #ffffff;
+}
+
+QPushButton#pathTriggerBtn:pressed {
+    background-color: {{border}};
+}
+
+/* Tabs - VS Code Style */
+QTabWidget::pane {
+    border-top: 1px solid {{border}};
+    background-color: {{bg}};
+}
+
+QTabBar::tab {
+    background-color: {{inactiveTab}};
+    color: {{textMuted}};
+    padding: 6px 10px 6px 15px;
+    padding-right: 32px;
+    border: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    margin-right: 4px;
+    margin-top: 2px;
+    min-width: 120px; /* 確保標籤寬度夠長，不被過度擠壓 */
+}
+
+QTabBar::tab:hover {
+    background-color: {{panelBg}};
+    color: {{text}};
+}
+
+/* Explorer Pane Frame Focus */
+ExplorerPane {
+    border: 2px solid transparent;
+    border-radius: 8px;
+    margin: 2px;
+}
+
+ExplorerPane#inactivePane {
+    border: 2px solid {{border}};
+    border-radius: 8px;
+}
+
+ExplorerPane#activePane {
+    border: 2px solid {{activeBorder}};
+    border-radius: 8px;
+}
+
+QTabBar::tab:selected {
+    background-color: {{panelBg}};
+    color: {{accent}};
+    font-weight: bold;
+    border: none;
+    border-top: 3px solid {{accent}};
+    border-bottom: none;
+    margin-top: 0px;
+}
+
+/* Tab Close Button - 改用實體 SVG 檔案確保渲染相容性 */
+QTabBar::close-button {
+    background-color: transparent;
+    subcontrol-position: right;
+    margin-right: 8px;   /* 離右側適中距離 */
+    margin-top: 1px;     /* 因應標籤高度調降，微調對齊 */
+    width: 14px;         /* 強制寬度防止被擠壓 */
+    height: 14px;        /* 強制高度 */
+    image: url("ui/close_normal.svg");
+}
+
+QTabBar::close-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    image: url("ui/close_hover.svg");
+}
+
+/* Tree & List Views - 徹底禁用系統雜訊 */
+QTreeView, QListView, QTableWidget {
+    background-color: {{bg}};
+    border: none;
+    outline: none; /* 移除橘色/藍色聚焦框 */
+    selection-background-color: transparent;
+    selection-color: transparent;
+    alternate-background-color: {{panelBg}};
+    show-decoration-selected: 1;
+}
+
+QTreeView::item, QListView::item {
+    padding: 6px;
+    color: {{text}};
+    border: 1px solid transparent; 
+    outline: none;
+}
+
+/* 1. 滑鼠指到的時候 (Hover) */
+QTreeView::item:hover, QListView::item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+}
+
+/* 2. 當此窗格是「啟動狀態 (Active Pane)」時的選取色彩 - 增亮處理 */
+ExplorerPane#activePane QTreeView::item:selected,
+ExplorerPane#activePane QListView::item:selected {
+    background-color: {{accentSubtle}};
+    border: 1px solid {{accentBorder}};
+    border-radius: 6px;
+    color: {{text}};
+}
+
+/* 3. 當選取了檔案，但點擊了「另一側窗格 (Inactive Pane)」時 */
+ExplorerPane#inactivePane QTreeView::item:selected,
+ExplorerPane#inactivePane QListView::item:selected {
+    background-color: {{surfaceSubtle}};
+    border: 1px solid {{border}};
+    border-radius: 6px;
+    color: {{textMuted}};
+}
+
+/* 4. 徹底修正：不准出現儲存格級別的橘色框 */
+QTreeView:focus, QListView:focus {
+    outline: none;
+    border: none;
+}
+
+/* 整體窗格的啟動狀態外框 - 改為橘色 (Active) */
+ExplorerPane#activePane {
+    border: 1.5px solid #D97706;
+}
+
+/* Header */
+QHeaderView::section {
+    background-color: {{headerBg}};
+    color: {{textMuted}};
+    padding: 4px;
+    border: none;
+    border-right: 1px solid {{border}};
+}
+
+/* Splitters */
+QSplitter::handle {
+    background-color: {{headerBg}};
+}
+
+#mainSplitter::handle {
+    background-color: {{border}};
+    width: 6px;
+}
+
+#mainSplitter::handle:hover,
+#mainSplitter::handle:pressed {
+    background-color: {{accentSubtle}};
+}
+
+/* Input Fields */
+QLineEdit, QSpinBox, QDateEdit, QComboBox {
+    background-color: {{panelBg}};
+    color: {{text}};
+    border: 1px solid {{border}};
+    padding: 4px 8px;
+    border-radius: 2px;
+}
+
+QLineEdit:focus {
+    border: 1px solid {{activeBorder}};
+}
+
+QGroupBox {
+    border: 1px solid {{border}};
+    border-radius: 5px;
+    margin-top: 1.2em;   /* 為標題留下空間，防止蓋住內部文字 */
+    font-weight: bold;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    top: 2px;            /* 微調垂直位置 */
+    padding: 0 5px;
+    color: {{accent}};
+}
+
+/* Buttons */
+QPushButton {
+    background-color: {{headerBg}};
+    color: {{text}};
+    border: 1px solid {{border}};
+    border-radius: 12px;
+    padding: 6px 15px;
+    min-width: 80px;
+}
+
+QPushButton:hover {
+    background-color: {{panelBg}};
+}
+
+QPushButton:pressed {
+    background-color: {{accent}};
+}
+
+QPushButton[active="true"] {
+    background-color: {{accent}};
+    color: #ffffff;
+}
+
+
+/* Status Bar */
+QStatusBar {
+    background-color: {{headerBg}};
+    color: {{text}};
+    border-top: 1px solid {{border}};
+}
+
+QStatusBar QLabel {
+    color: {{text}};
+}
+
+/* Context Menu */
+QMenu {
+    background-color: {{panelBg}};
+    color: {{text}};
+    border: 1px solid {{border}};
+    border-radius: 6px;
+    padding: 4px 0px;
+}
+QMenu::item {
+    padding: 6px 20px 6px 12px;
+    border-radius: 4px;
+    margin: 1px 4px;
+}
+QMenu::item:selected {
+    background-color: {{accent}};
+    color: #ffffff;
+}
+QMenu::item:disabled {
+    color: {{textMuted}};
+}
+QMenu::separator {
+    height: 1px;
+    background: {{border}};
+    margin: 4px 8px;
+}
+
+/* ScrollBars — 透明軌道 + 內縮圓角滑塊 */
+QScrollBar:vertical {
+    border: none;
+    background: transparent;
+    width: 10px;
+    margin: 2px 0px;
+}
+QScrollBar::handle:vertical {
+    background: {{border}};
+    min-height: 28px;
+    border-radius: 4px;
+    margin: 0px 2px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #525C67;
+}
+QScrollBar::handle:vertical:pressed {
+    background: {{accent}};
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+
+QScrollBar:horizontal {
+    border: none;
+    background: transparent;
+    height: 10px;
+    margin: 0px 2px;
+}
+QScrollBar::handle:horizontal {
+    background: {{border}};
+    min-width: 28px;
+    border-radius: 4px;
+    margin: 2px 0px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #525C67;
+}
+QScrollBar::handle:horizontal:pressed {
+    background: {{accent}};
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: transparent;
+}
+
+/* Path Popup Window */
+#PathPopup {
+    background-color: {{panelBg}};
+    border: 1px solid {{border}};
+    border-radius: 6px;
+}
+
+#PathPopup QPushButton:hover {
+    background-color: {{inactiveTab}};
+    color: {{text}};
+}
+
+/* Snapshot Button */
+QToolButton#snapshotBtn {
+    background-color: {{panelBg}};
+    color: {{text}};
+    font-size: 9.5pt;
+    border: 1px solid {{border}};
+    border-radius: 4px;
+    padding: 2px 8px;
+}
+
+QToolButton#snapshotBtn:hover {
+    background-color: {{accent}};
+    color: #ffffff;
+    border-color: {{accent}};
+}
+
+/* Pin Button */
+QToolButton#pinBtn {
+    background-color: {{panelBg}};
+    color: {{activeBorder}};
+    font-size: 9.5pt;
+    border: 1px solid {{activeBorder}};
+    border-radius: 4px;
+    padding: 2px 8px;
+}
+
+QToolButton#pinBtn:hover {
+    background-color: {{activeBorder}};
+    color: #ffffff;
+    border-color: {{activeBorder}};
+}
+
+QToolButton#pinBtnUrgent {
+    background-color: {{panelBg}};
+    color: {{danger}};
+    font-size: 9.5pt;
+    font-weight: bold;
+    border: 1px solid {{danger}};
+    border-radius: 4px;
+    padding: 2px 8px;
+}
+
+QToolButton#pinBtnUrgent:hover {
+    background-color: {{danger}};
+    color: #ffffff;
+}
+
+QToolButton#pinBtnDrop {
+    background-color: {{success}};
+    color: #ffffff;
+    font-weight: bold;
+    border: 2px solid {{success}};
+    border-radius: 4px;
+    padding: 2px 8px;
+}
+
+/* Pin Popup */
+QFrame#PinPopup {
+    background-color: {{panelBg}};
+    border: 1px solid {{border}};
+    border-radius: 6px;
+}
+
+QPushButton#pinItemBtn {
+    background-color: transparent;
+    color: {{text}};
+    text-align: left;
+    border: none;
+    padding: 4px 6px;
+    font-size: 10.5pt;
+}
+
+QPushButton#pinItemBtn:hover {
+    background-color: {{activeTab}};
+    border-radius: 3px;
+}
+
+QPushButton#pinItemBtnDone {
+    background-color: transparent;
+    color: {{textMuted}};
+    text-align: left;
+    border: none;
+    padding: 4px 6px;
+    font-size: 10.5pt;
+    text-decoration: line-through;
+}
+
+QPushButton#pinStar {
+    background-color: transparent;
+    color: {{textMuted}};
+    border: none;
+    padding: 0px;
+    font-size: 11pt;
+}
+
+QPushButton#pinStarActive {
+    background-color: transparent;
+    color: {{folder}};
+    border: none;
+    padding: 0px;
+    font-size: 11pt;
+}
+
+QLabel#pinNoteLabel {
+    color: rgba(139, 148, 158, 0.6);
+    font-size: 9.5pt;
+    padding: 0px 6px 3px 28px;
+}
+
+QLabel#pinEmptyLabel {
+    color: {{textMuted}};
+    padding: 6px;
+    font-size: 10pt;
+}
+
+/* TTL dots */
+QLabel#pinDotFresh {
+    background-color: {{pin_fresh}};
+    border-radius: 5px;
+}
+
+QLabel#pinDotWarn {
+    background-color: {{pin_warn}};
+    border-radius: 5px;
+}
+
+QLabel#pinDotUrgent {
+    background-color: {{pin_urgent}};
+    border-radius: 5px;
+}
+
+/* Tab Plus Button */
+QToolButton#addTabBtn {
+    background-color: {{panelBg}};
+    color: {{text}};
+    font-size: 14px;
+    font-weight: bold;
+    border: 1px solid {{border}};
+    border-radius: 12px; /* 同步工具列按鍵圓角 */
+    padding: 2px 8px;    /* 縮小尺寸 */
+}
+
+QToolButton#addTabBtn:hover {
+    background-color: {{activeTab}};
+    color: #ffffff;
+}
+
+/* Tab Scroller Buttons Styles */
+QTabBar QToolButton {
+    background-color: {{headerBg}};
+    border: 1px solid {{accent}}; /* 用強調色框起來，更容易看見 */
+    border-radius: 4px;
+    width: 22px;
+    height: 22px;
+    margin: 1px;
+}
+
+QTabBar QToolButton:hover {
+    background-color: {{activeTab}};
+}
+
+QTabBar QToolButton::right-arrow {
+    image: url("ui/right_arrow.svg");
+    width: 12px;
+    height: 12px;
+}
+
+QTabBar QToolButton::left-arrow {
+    image: url("ui/left_arrow.svg");
+    width: 12px;
+    height: 12px;
+}
+
+/* In-time Message Label */
+#msgLabel {
+    color: {{textMuted}};
+    font-size: 9.5pt;
+    padding: 0 15px;
+    margin-left: 10px;
+}
+
+#msgLabel[type="error"] {
+    color: #F85149; /* 更沉穩的 GitHub 紅 */
+    background-color: rgba(248, 81, 73, 0.05);
+    border-radius: 4px;
+}
+
+#msgLabel[type="tip"] {
+    color: {{text}};
+}
+
+#msgLabel[flash="true"] {
+    color: #ffffff;
+    background-color: {{accent}};
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+QPushButton#syncMirrorBtn {
+    background-color: {{danger}};
+    color: #ffffff;
+    font-weight: bold;
+    border-radius: 4px;
+    padding: 6px 12px;
+}
+QPushButton#syncMirrorBtn:hover {
+    background-color: {{danger}};
+    opacity: 0.85;
+}
+QPushButton#syncMirrorBtn:disabled {
+    background-color: {{border}};
+    color: {{textMuted}};
+}
+
+QPushButton#syncL2RBtn {
+    background-color: {{accent}};
+    color: #ffffff;
+    font-weight: bold;
+    border-radius: 4px;
+    padding: 6px 12px;
+}
+QPushButton#syncL2RBtn:hover {
+    background-color: {{activeTab}};
+}
+QPushButton#syncL2RBtn:disabled {
+    background-color: {{border}};
+    color: {{textMuted}};
+}
+
+#paneStatusLabel {
+    color: {{textMuted}};
+    font-size: 9.5pt;
+    padding: 0 8px;
+}
+
+/* --- 狀態列垃圾桶按鈕 --- */
+QToolButton#trashDropBtn {
+    background-color: transparent;
+    border: none;
+    border-right: 1px solid {{border}};
+    padding: 4px 10px;
+}
+
+QToolButton#trashDropBtn:hover {
+    background-color: rgba(224, 108, 117, 0.15);
+    border-right: 1px solid {{border}};
+}
+
+QToolButton#trashDropBtnDrag {
+    background-color: rgba(224, 108, 117, 0.30);
+    border: 1px solid rgba(224, 108, 117, 0.6);
+    border-radius: 4px;
+    padding: 4px 10px;
+}
+
+/* --- Temporary Trash (臨時垃圾桶) --- */
+#trashWidget {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+}
+
+#trashWidget[active="true"] {
+    border: 1px solid {{accent}};
+    background-color: {{inactiveTab}};
+}
+
+#trashWidget:hover {
+    border: 1px solid {{border}};
+    background-color: {{inactiveTab}};
+}
+
+#trashIcon {
+    font-size: 18pt;
+}
+
+#trashBadge {
+    background-color: #f85149;
+    color: white;
+    border-radius: 10px;
+    padding: 0px;
+    font-size: 8pt;
+    font-weight: bold;
+    min-width: 20px;
+    min-height: 20px;
+}
+
+/* --- 導覽窗格 (Navigation Pane) --- */
+#navPanel {
+    background-color: {{panelBg}};
+    border-right: 1px solid {{border}};
+}
+
+#navTree {
+    background-color: {{panelBg}};
+    border: none;
+}
+
+#navTree::item {
+    padding: 5px 4px;
+    color: {{text}};
+}
+
+#navTree::item:hover {
+    background-color: {{inactiveTab}};
+}
+
+#navTree::item:selected {
+    background-color: {{activeTab}};
+    color: #ffffff;
+}
+
+/* --- Same-path Warning Bar --- */
+#samePathWarning {
+    background-color: {{accentSubtle}};
+    color: {{text}};
+    font-size: 9pt;
+    padding: 3px 0;
+    border-top: 1px solid {{accentBorder}};
+    border-bottom: 1px solid {{accentBorder}};
+}
+
+/* --- Toast Notifications --- */
+Toast {
+    background-color: {{panelBg}};
+    border: 1px solid {{border}};
+    border-radius: 8px;
+    min-width: 240px;
+    max-width: 380px;
+}
+Toast[kind="success"] { border-left: 4px solid {{success}}; }
+Toast[kind="error"]   { border-left: 4px solid {{danger}}; }
+Toast[kind="info"]    { border-left: 4px solid {{accent}}; }
+Toast[kind="warning"] { border-left: 4px solid {{folder}}; }
+
+#toastIcon {
+    font-size: 12pt;
+    font-weight: bold;
+}
+#toastMsg {
+    color: {{text}};
+    font-size: 9.5pt;
+}
+#toastClose {
+    background: transparent;
+    border: none;
+    color: {{textMuted}};
+    font-size: 9pt;
+    padding: 0;
+}
+#toastClose:hover {
+    color: {{text}};
+}
+
+
+/* Preview Mode Close Button */
+QToolButton#closePreviewBtn {
+    background-color: {{danger}};
+    color: #ffffff;
+    font-size: 9pt;
+    font-weight: bold;
+    border: 1px solid {{danger}};
+    border-radius: 4px;
+    padding: 2px 10px;
+}
+QToolButton#closePreviewBtn:hover {
+    background-color: {{accent}};
+    border-color: {{accent}};
+}
+
+/* Quality Toggle Button (Glassmorphism) */
+QToolButton#qualityToggleBtn {
+    background-color: transparent;
+    border-radius: 4px;
+    font-size: 10pt;
+    font-weight: normal;
+    padding: 3px 12px;
+}
+
+QToolButton#qualityToggleBtn[quality="SD"] {
+    border: 1px solid #4A4D55;
+    color: #B0B3B8;
+    qproperty-icon: url("ui/bolt.svg");
+}
+
+QToolButton#qualityToggleBtn[quality="SD"]:hover {
+    border: 1px solid #6A6D75;
+    color: #FFFFFF;
+    qproperty-icon: url("ui/bolt_hover.svg");
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+QToolButton#qualityToggleBtn[quality="HD"] {
+    border: 1px solid #1F4068;
+    color: #3b82f6;
+    qproperty-icon: url("ui/monitor_up.svg");
+    background-color: rgba(31, 64, 104, 0.3);
+}
+
+QToolButton#qualityToggleBtn[quality="HD"]:hover {
+    border: 1px solid #3b82f6;
+    color: #60A5FA;
+    qproperty-icon: url("ui/monitor_up_hover.svg");
+    background-color: rgba(59, 130, 246, 0.15);
+}
+
+/* Pane header icon-only buttons */
+QToolButton#backBtn,
+QToolButton#forwardBtn,
+QToolButton#upBtn,
+QToolButton#paneHomeBtn,
+QToolButton#paneCustomPathsBtn,
+QToolButton#listViewBtn,
+QToolButton#gridViewBtn {
+    padding: 4px; /* 增加到 4px，讓 16px 圖示在 24px 按鈕中更通透 */
+    min-width: 24px;
+    min-height: 24px;
+    border-radius: 6px;
+}
+
+QToolButton#backBtn        { image: url(ui/left_arrow.svg); }
+QToolButton#forwardBtn     { image: url(ui/right_arrow.svg); }
+QToolButton#upBtn          { image: url(ui/up_arrow.svg); }
+QToolButton#paneHomeBtn    { image: url(ui/home.svg); }
+QToolButton#paneCustomPathsBtn { image: url(ui/bookmark.svg); }
+QToolButton#listViewBtn    { image: url(ui/list_view.svg); }
+QToolButton#gridViewBtn    { image: url(ui/grid_view.svg); }
+
+/* Disabled state — dimmed gray icons */
+QToolButton#backBtn:disabled    { image: url(ui/left_arrow_disabled.svg); }
+QToolButton#forwardBtn:disabled { image: url(ui/right_arrow_disabled.svg); }
+
+QToolButton#listViewBtn[active="true"],
+QToolButton#gridViewBtn[active="true"] {
+    background-color: rgba(88, 166, 255, 0.15);
+    border-color: rgba(88, 166, 255, 0.5);
+}
+QToolButton#listViewBtn[active="true"] {
+    image: url(ui/list_view_active.svg);
+}
+QToolButton#gridViewBtn[active="true"] {
+    image: url(ui/grid_view_active.svg);
+}
+
+/* Search input with left icon (icon added via code addAction) */
+QLineEdit#searchEdit {
+    padding-left: 5px;
+    padding-right: 5px;
+}
+
+/* 搜尋欄下方即時計數與提示標籤 */
+QLabel#searchStatusLabel {
+    color: #9ca3af;
+    font-size: 11px;
+    padding: 1px 6px 2px 6px;
+}
+
+/* Splitter bridge button — 視覺優化：Hover 選中採用內斂深藍色 */
+QPushButton#splitterBridgeBtn {
+    border-radius: 14px;
+    background-color: {{headerBg}};
+    color: #ffffff;
+    border: 1px solid {{border}};
+    padding: 4px;
+    image: url("ui/compare.svg");
+}
+QPushButton#splitterBridgeBtn:hover {
+    background-color: {{accentSubtle}};
+    border-color: {{accentBorder}};
+}
+QPushButton#splitterBridgeBtn:pressed {
+    background-color: {{border}};
+}
+QSplitter#mainSplitter::handle {
+    background: transparent;
+}
+
+/* --- Progress Bar --- */
+QProgressBar {
+    background-color: {{panelBg}};
+    border: 1px solid {{border}};
+    border-radius: 4px;
+    text-align: center;
+    color: {{text}};
+    font-size: 10px;
+}
+
+QProgressBar::chunk {
+    background-color: {{accent}};
+    border-radius: 3px;
+}
+
+QProgressBar#scan_progress_bar {
+    background-color: transparent;
+    border: none;
+}
+QProgressBar#scan_progress_bar::chunk {
+    background-color: {{accentSubtle}};
+}

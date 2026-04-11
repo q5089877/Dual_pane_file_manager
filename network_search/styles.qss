@@ -1,0 +1,101 @@
+/* 
+   Network Search Module Styles 
+   Colors are dynamically injected from theme.json via ConfigManager
+*/
+
+QWidget {
+    background-color: {{bg}};
+    color: {{text}};
+    font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+}
+
+QLineEdit {
+    background-color: {{panelBg}};
+    color: {{text}};
+    border: 1px solid {{border}};
+    padding: 5px;
+    border-radius: 4px;
+}
+
+QLineEdit:focus {
+    border: 1px solid {{accent}};
+}
+
+QPushButton {
+    background-color: {{panelBg}};
+    color: {{text}};
+    border: 1px solid {{border}};
+    padding: 6px 15px;
+    border-radius: 4px;
+}
+
+QPushButton:hover {
+    background-color: {{inactiveTab}};
+}
+
+QPushButton:pressed {
+    background-color: {{activeTab}};
+}
+
+QToolButton {
+    background-color: {{panelBg}};
+    color: {{accent}};
+    border: 1px solid {{border}};
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-weight: bold;
+}
+
+QToolButton:hover {
+    background-color: {{inactiveTab}};
+    border: 1px solid {{accent}};
+}
+
+QTreeView {
+    background-color: {{bg}};
+    alternate-background-color: {{panelBg}};
+    selection-background-color: {{activeTab}};
+    selection-color: {{text}};
+    border: none;
+    outline: 0;
+}
+
+QTreeView::item {
+    padding: 5px;
+    color: {{text}};
+}
+
+QTreeView::item:hover {
+    background-color: {{inactiveTab}};
+}
+
+QTreeView::item:selected {
+    background-color: {{activeTab}};
+    color: {{text}};
+}
+
+QHeaderView::section {
+    background-color: {{headerBg}};
+    color: {{textMuted}};
+    padding: 4px;
+    border: none;
+    border-right: 1px solid {{border}};
+}
+
+QProgressBar {
+    background-color: {{panelBg}};
+    border: 1px solid {{border}};
+    border-radius: 4px;
+    text-align: center;
+    color: {{text}};
+}
+
+QProgressBar::chunk {
+    background-color: {{accent}};
+}
+
+QStatusBar {
+    background-color: {{headerBg}};
+    color: {{textMuted}};
+    border-top: 1px solid {{border}};
+}

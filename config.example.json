@@ -1,0 +1,55 @@
+{
+    "language": "zh_TW",
+    "left_tabs": ["C:\\"],
+    "right_tabs": ["C:\\"],
+    "custom_paths": [],
+    "restore_last_session": true,
+    "confirm_before_delete": true,
+    "preview_font_size": 13,
+    "pdf_preview_max_pages": 3,
+    "splitter_sizes": [760, 760],
+
+    "remote_index_root": "",
+    "remote_index_suffix": "",
+    "update_source_suffix": "",
+    "is_master_node": false,
+    "default_scan_root": "",
+    "max_depth": 2,
+    "search_limit": 1000,
+    "monitored_paths": [],
+    "exclude_exts": [],
+    "exclude_dirs": [],
+
+    "db_settings": {
+        "sqlite_timeout": 30,
+        "busy_timeout_ms": 5000,
+        "wal_cache_size": -10000,
+        "transaction_batch_size": 200,
+        "queue_get_timeout": 0.2,
+        "queue_put_timeout": 0.2
+    },
+    "maintenance_settings": {
+        "idle_check_interval_ms": 60000,
+        "idle_lock_cooldown_min": 2,
+        "nightly_scan_hour": 2,
+        "nightly_scan_minute": 0
+    },
+    "paste_settings": {
+        "image_prefix": "剪貼圖",
+        "text_prefix": "文字筆記",
+        "image_format": "%Y%m%d_%H%M%S",
+        "text_format": "%Y%m%d_%H%M%S"
+    },
+    "ai_exporter_settings": {
+        "whitelist_exts": [".py", ".txt", ".md", ".json", ".js", ".ts", ".c", ".cpp", ".h", ".cs", ".java", ".go", ".html", ".css", ".sql", ".yaml", ".yml", ".ini", ".conf"],
+        "blacklist_dirs": [".git", "__pycache__", "node_modules", ".vs", ".idea", "venv", "build", "dist", "bin", "obj", "logs", "temp", "tmp", ".vscode"],
+        "file_size_limit_kb": 100,
+        "total_size_limit_mb": 2,
+        "max_depth": 5
+    },
+    "search_filters": {
+        "size_labels": ["全部", "> 1 MB", "> 10 MB", "> 100 MB", "> 1 GB"],
+        "size_thresholds": {"0": 0, "1": 1048576, "2": 10485760, "3": 104857600, "4": 1073741824},
+        "time_labels": ["全部", "🕒 今日", "📅 本週", "本月"]
+    }
+}
