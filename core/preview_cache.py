@@ -12,7 +12,7 @@ class PreviewCache:
     def __init__(self, cache_dir: str = ".preview_cache"):
         # 預設將快取存放在系統的暫存資料夾中，避免污染專案目錄
         self.cache_dir = Path(tempfile.gettempdir()) / \
-            "DoubleFileExplorer" / cache_dir
+            "DualPaneFileManager" / cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     def get_cache_key(self, file_path: str, params: Optional[dict] = None) -> str:

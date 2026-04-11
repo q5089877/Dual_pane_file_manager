@@ -152,7 +152,7 @@
   "ui_dialog_settings_lang_changed_msg": "語言設定已儲存，重新啟動應用程式後生效。",
   "ui_lang_zh_TW": "繁體中文",
   "ui_lang_en_US": "English",
-  "ui_main_window_title": "左右分欄檔案總管 (Double File Explorer)",
+  "ui_main_window_title": "左右分欄檔案總管 (Dual Pane File Manager)",
   "ui_main_trash_tooltip": "點擊刪除選取項目（Del）\n拖放檔案到此處 → 移至回收筒",
   "ui_main_trash_status_success": "🗑 已移至回收筒：{} 個項目（Ctrl+Z 可復原）",
   "ui_main_trash_status_error": "❌ 部分失敗：{}",

@@ -14,8 +14,8 @@ except ImportError:
 
 def main():
     app = QApplication(sys.argv)
-    app.setOrganizationName("DoubleFileExplorer")
-    app.setApplicationName("DoubleFileExplorer")
+    app.setOrganizationName("DualPaneFileManager")
+    app.setApplicationName("DualPaneFileManager")
     
     from core.config_manager import ConfigManager
     config_mgr = ConfigManager()

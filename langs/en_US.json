@@ -152,7 +152,7 @@
   "ui_dialog_settings_lang_changed_msg": "Language settings saved. Restart application to apply.",
   "ui_lang_zh_TW": "繁體中文",
   "ui_lang_en_US": "English",
-  "ui_main_window_title": "Double File Explorer",
+  "ui_main_window_title": "Dual Pane File Manager",
   "ui_main_trash_tooltip": "Click to delete selected (Del)\nDrag here → Send to Trash",
   "ui_main_trash_status_success": "🗑 Moved to Trash: {} items (Ctrl+Z to undo)",
   "ui_main_trash_status_error": "❌ Partial failure: {}",

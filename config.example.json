@@ -9,6 +9,7 @@
     "pdf_preview_max_pages": 3,
     "splitter_sizes": [760, 760],
 
+    "github_repo": "your-username/double-file-explorer",
     "remote_index_root": "",
     "remote_index_suffix": "",
     "update_source_suffix": "",

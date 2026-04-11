@@ -23,14 +23,14 @@ def main():
     if sys.platform == "win32":
         try:
             import ctypes
-            my_app_id = u"DoubleFileExplorer.1.0"
+            my_app_id = u"DualPaneFileManager.1.0"
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
         except Exception:
             pass
 
     app = QApplication(sys.argv)
-    app.setOrganizationName("DoubleFileExplorer")
-    app.setApplicationName("DoubleFileExplorer")
+    app.setOrganizationName("DualPaneFileManager")
+    app.setApplicationName("DualPaneFileManager")
 
     # Set Window Icon
     icon_path = ConfigManager.get_resource_path("app_icon.png")

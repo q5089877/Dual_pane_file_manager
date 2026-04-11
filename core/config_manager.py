@@ -11,7 +11,7 @@ class ConfigManager:
     _DEFAULT_UPDATE_SUFFIX = ""
     _DEFAULT_REMOTE_INDEX_SUFFIX = ""
 
-    def __init__(self, app_name="DoubleFileExplorer"):
+    def __init__(self, app_name="DualPaneFileManager"):
         # Portable Mode Check
         import sys
         if getattr(sys, 'frozen', False):

@@ -1,4 +1,4 @@
-# Double File Explorer
+# Dual Pane File Manager
 
 A dual-pane file explorer for Windows, built with Python and PyQt6.  
 Designed for engineers and power users who work with deep project directories and network drives.

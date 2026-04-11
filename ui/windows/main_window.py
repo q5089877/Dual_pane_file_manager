@@ -167,7 +167,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config_mgr = ConfigManager()
-        title = self.config_mgr.get_text("ui_main_window_title", "左右分欄檔案總管 (Double File Explorer)")
+        title = self.config_mgr.get_text("ui_main_window_title", "左右分欄檔案總管 (Dual Pane File Manager)")
         self.setWindowTitle(title)
         self.resize(1200, 800)
         self.showMaximized()
@@ -820,43 +820,71 @@ class MainWindow(QMainWindow):
                 tw.widget(i).refresh()
 
     def _start_update_check(self):
-        """啟動非同步更新檢查執行緒。"""
+        """啟動非同步更新檢查執行緒（GitHub Releases）。"""
         from ui.workers.update_manager import UpdateCheckWorker
         self._update_worker = UpdateCheckWorker(self.config_mgr)
-        self._update_worker.update_detected.connect(self._on_update_detected)
+        self._update_worker.update_available.connect(self._on_update_available)
         self._update_worker.start()
 
-    def _on_update_detected(self, master_exe, bat_path):
-        """當發現新版本時，在狀態列顯示更新按鈕。"""
-        msg = self.config_mgr.get_text("ui_update_found", "🚀 伺服器有新版本！")
+    def _on_update_available(self, version: str, download_url: str):
+        """當 GitHub 有新版本時，在狀態列顯示更新按鈕。"""
+        msg = self.config_mgr.get_text("ui_update_found", "🚀 新版本 {v} 已發布！").format(v=version)
         self.set_status_msg(msg, "success")
-        
+
         btn_text = self.config_mgr.get_text("ui_update_now", "立即更新")
         self.update_btn.setText(btn_text)
         self.update_btn.show()
-        
-        # 重新連接點擊事件，確保帶入正確的路徑
+
         try: self.update_btn.clicked.disconnect()
         except: pass
-        self.update_btn.clicked.connect(lambda: self._trigger_update(bat_path))
+        self.update_btn.clicked.connect(lambda: self._trigger_update(download_url))
 
-    def _trigger_update(self, bat_path):
-        """執行更新腳本並關閉程式，遵循防禦性編程（射後不理）。"""
-        import subprocess
-        import sys
-        
-        # 使用 QProcess 或 subprocess.Popen 啟動更新腳本
-        # CREATE_NEW_CONSOLE (0x00000010) 確保腳本在獨立視窗運行
-        try:
-            CREATE_NEW_CONSOLE = 0x00000010
-            subprocess.Popen([bat_path], creationflags=CREATE_NEW_CONSOLE)
-            
-            # 立刻拔插頭關閉程式，釋放檔案鎖定
-            from PyQt6.QtWidgets import QApplication
-            QApplication.quit()
-            sys.exit(0)
-        except Exception as e:
-            self.set_status_msg(f"無法執行更新程式: {e}", "error")
+    def _trigger_update(self, download_url: str):
+        """下載新版 zip，寫入更新腳本後關閉程式。"""
+        import sys, subprocess, os
+        from ui.workers.update_manager import DownloadUpdateWorker, write_update_script
+        from PyQt6.QtWidgets import QProgressDialog, QApplication
+        from PyQt6.QtCore import Qt
+
+        self.update_btn.setEnabled(False)
+        self.set_status_msg(self.config_mgr.get_text("ui_update_downloading", "正在下載更新…"), "")
+
+        progress_dlg = QProgressDialog(
+            self.config_mgr.get_text("ui_update_downloading", "正在下載更新…"),
+            self.config_mgr.get_text("ui_cancel", "取消"), 0, 100, self
+        )
+        progress_dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        progress_dlg.setMinimumDuration(0)
+        progress_dlg.show()
+
+        worker = DownloadUpdateWorker(download_url)
+        worker.progress.connect(progress_dlg.setValue)
+        worker.error.connect(lambda msg: (
+            progress_dlg.close(),
+            self.set_status_msg(f"下載失敗：{msg}", "error"),
+            self.update_btn.setEnabled(True),
+        ))
+
+        def on_finished(zip_path: str):
+            progress_dlg.close()
+            if getattr(sys, 'frozen', False):
+                install_dir = os.path.dirname(sys.executable)
+            else:
+                install_dir = os.path.dirname(os.path.abspath(__file__))
+
+            bat_path = write_update_script(zip_path, install_dir)
+            try:
+                subprocess.Popen([bat_path], creationflags=0x00000010)  # CREATE_NEW_CONSOLE
+                QApplication.quit()
+                sys.exit(0)
+            except Exception as e:
+                self.set_status_msg(f"無法執行更新腳本：{e}", "error")
+                self.update_btn.setEnabled(True)
+
+        worker.finished.connect(on_finished)
+        progress_dlg.canceled.connect(worker.cancel)
+        self._download_worker = worker  # 防止 GC
+        worker.start()
 
     def on_ctrl_left(self): self.presenter.sync_to_left()
     def on_ctrl_right(self): self.presenter.sync_to_right()
