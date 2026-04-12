@@ -5,41 +5,34 @@ folder_tree.py — 遞迴產生資料夾樹狀圖（Markdown 格式，含 📁/�
 import os
 
 
-def count_items(root: str) -> int:
-    """快速計算 root 下的總項目數（資料夾 + 檔案）。"""
+def count_items(root: str, blacklist: list[str] | None = None, max_depth: int = 10) -> int:
+    """快速計算 root 下的總項目數（資料夾 + 檔案），套用黑名單與深度限制。"""
+    blacklist_lower = {b.lower() for b in (blacklist or [])}
+    root_depth = root.count(os.sep)
     total = 0
-    for _, dirs, files in os.walk(root):
+    for dirpath, dirs, files in os.walk(root):
+        current_depth = dirpath.count(os.sep) - root_depth
+        if current_depth >= max_depth:
+            dirs.clear()
+            continue
+        dirs[:] = [d for d in dirs if d.lower() not in blacklist_lower]
         total += len(dirs) + len(files)
     return total
 
 
-def generate_tree(root: str) -> str:
+def generate_tree(root: str, blacklist: list[str] | None = None, max_depth: int = 10) -> str:
     """
     遞迴掃描 root，回傳 Markdown 格式的樹狀圖字串。
-
-    格式範例：
-        # Directory Structure: my_folder
-
-        ## 📂 Directory Structure
-        ```text
-        📁 my_folder/
-        ├── 📁 docs/
-        │   └── 📄 report.pdf
-        └── 📄 README.md
-        ```
-
-        ---
-
-        ## 📊 Statistics
-        - **Total Files in Tree:** 5
-        - **Mode:** Directory Structure Only (Tree Map)
+    blacklist: 要略過的資料夾名稱（大小寫不分）。
+    max_depth: 最大遞迴深度。
     """
+    blacklist_lower = {b.lower() for b in (blacklist or [])}
     root_name = os.path.basename(root.rstrip("/\\")) or root
     tree_lines: list[str] = []
     file_count = [0]
 
     tree_lines.append(f"📁 {root_name}/")
-    _build(root, "", tree_lines, file_count)
+    _build(root, "", tree_lines, file_count, blacklist_lower, max_depth, 0)
 
     tree_text = "\n".join(tree_lines)
 
@@ -56,20 +49,22 @@ def generate_tree(root: str) -> str:
     )
 
 
-def _build(directory: str, prefix: str, lines: list[str], file_count: list[int]) -> None:
-    """遞迴輔助函式，沿用 AIExporter 風格：資料夾用 ├──，檔案用 └──。"""
+def _build(directory: str, prefix: str, lines: list[str], file_count: list[int],
+           blacklist: set[str], max_depth: int, current_depth: int) -> None:
+    if current_depth >= max_depth:
+        return
     try:
         entries = sorted(os.scandir(directory), key=lambda e: (not e.is_dir(), e.name.lower()))
     except PermissionError:
         lines.append(f"{prefix}└── [存取被拒]")
         return
 
-    dirs = [e for e in entries if e.is_dir(follow_symlinks=False)]
+    dirs = [e for e in entries if e.is_dir(follow_symlinks=False) and e.name.lower() not in blacklist]
     files = [e for e in entries if not e.is_dir(follow_symlinks=False)]
 
     for entry in dirs:
         lines.append(f"{prefix}├── 📁 {entry.name}/")
-        _build(entry.path, prefix + "│   ", lines, file_count)
+        _build(entry.path, prefix + "│   ", lines, file_count, blacklist, max_depth, current_depth + 1)
 
     for entry in files:
         lines.append(f"{prefix}└── 📄 {entry.name}")

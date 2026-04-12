@@ -43,7 +43,17 @@
     },
     "ai_exporter_settings": {
         "whitelist_exts": [".py", ".txt", ".md", ".json", ".js", ".ts", ".c", ".cpp", ".h", ".cs", ".java", ".go", ".html", ".css", ".sql", ".yaml", ".yml", ".ini", ".conf"],
-        "blacklist_dirs": [".git", "__pycache__", "node_modules", ".vs", ".idea", "venv", "build", "dist", "bin", "obj", "logs", "temp", "tmp", ".vscode"],
+        "blacklist_dirs": [
+            ".git", ".svn",
+            "__pycache__", "venv", ".venv", ".tox", "env",
+            "node_modules", "bower_components", ".next", ".nuxt", ".svelte-kit",
+            "bin", "obj", ".vs", "packages", "TestResults",
+            "build", "dist", "out", "target", "Debug", "Release", "x64", "x86",
+            ".gradle", ".m2",
+            ".idea", ".jj", ".vscode",
+            ".pytest_cache", ".mypy_cache", ".ruff_cache",
+            "logs", "log", "temp", "tmp", "Backup"
+        ],
         "file_size_limit_kb": 100,
         "total_size_limit_mb": 2,
         "max_depth": 5

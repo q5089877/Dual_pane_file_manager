@@ -120,7 +120,16 @@ class ConfigManager:
         if "ai_exporter_settings" not in config:
             config["ai_exporter_settings"] = {
                 "whitelist_exts": [".py", ".txt", ".md", ".json", ".js", ".ts", ".c", ".cpp", ".h", ".cs", ".java", ".go", ".html", ".css", ".sql", ".yaml", ".yml", ".ini", ".conf"],
-                "blacklist_dirs": [".git", "__pycache__", "node_modules", ".vs", ".idea", ".jj", "venv", "build", "dist", "bin", "obj", "Backup", "logs", "temp", "tmp", ".vscode"],
+                "blacklist_dirs": [
+                    ".git", ".svn",
+                    "__pycache__", "venv", ".venv", ".tox", "env",
+                    "node_modules", "bower_components", ".next", ".nuxt", ".svelte-kit",
+                    "bin", "obj", ".vs", "packages", "TestResults",
+                    "build", "dist", "out", "target", "Debug", "Release", "x64", "x86",
+                    ".gradle", ".m2",
+                    ".idea", ".jj", ".vscode",
+                    "logs", "log", "temp", "tmp", "Backup",
+                ],
                 "file_size_limit_kb": 100,
                 "total_size_limit_mb": 2,
                 "max_depth": 5
@@ -346,15 +355,28 @@ class ConfigManager:
         })
 
     def get_ai_exporter_settings(self):
+        _DEFAULT_BLACKLIST = [
+            ".git", ".svn",
+            "__pycache__", "venv", ".venv", ".tox", "env",
+            "node_modules", "bower_components", ".next", ".nuxt", ".svelte-kit",
+            "bin", "obj", ".vs", "packages", "TestResults",
+            "build", "dist", "out", "target", "Debug", "Release", "x64", "x86",
+            ".gradle", ".m2",
+            ".idea", ".jj", ".vscode",
+            ".pytest_cache", ".mypy_cache", ".ruff_cache",
+            "logs", "log", "temp", "tmp", "Backup",
+        ]
         config = self.load_config()
-        settings = config.get("ai_exporter_settings", {
-            "whitelist_exts": [".py", ".txt", ".md", ".json", ".js", ".ts", ".c", ".cpp", ".h", ".cs", ".java", ".go", ".html", ".css", ".sql", ".yaml", ".yml", ".ini", ".conf"],
-            "blacklist_dirs": [".git", "__pycache__", "node_modules", ".vs", ".idea", ".jj", "venv", "build", "dist", "bin", "obj"],
-            "file_size_limit_kb": 100,
-            "total_size_limit_mb": 2,
-            "max_depth": 5
-        })
-        if "whitelist_exts" in settings and isinstance(settings["whitelist_exts"], list):
+        settings = config.get("ai_exporter_settings", {}).copy()
+        # Always merge stored blacklist with defaults so new entries apply to existing installs
+        stored_blacklist = settings.get("blacklist_dirs", [])
+        merged = list({d.lower(): d for d in _DEFAULT_BLACKLIST + stored_blacklist}.values())
+        settings.setdefault("whitelist_exts", [".py", ".txt", ".md", ".json", ".js", ".ts", ".c", ".cpp", ".h", ".cs", ".java", ".go", ".html", ".css", ".sql", ".yaml", ".yml", ".ini", ".conf"])
+        settings["blacklist_dirs"] = merged
+        settings.setdefault("file_size_limit_kb", 100)
+        settings.setdefault("total_size_limit_mb", 2)
+        settings.setdefault("max_depth", 5)
+        if isinstance(settings["whitelist_exts"], list):
             settings["whitelist_exts"] = [e.strip() for e in settings["whitelist_exts"] if e.strip()]
         return settings
 

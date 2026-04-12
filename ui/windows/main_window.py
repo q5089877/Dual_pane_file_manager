@@ -1462,7 +1462,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, self.config_mgr.get_text("ui_main_warn_title", "警告"), self.config_mgr.get_text("ui_main_warn_select_folder", "請選取一個資料夾。"))
             return
 
-        total = count_items(path)
+        ai_settings = self.config_mgr.get_ai_exporter_settings()
+        blacklist = ai_settings.get("blacklist_dirs", [])
+        max_depth = ai_settings.get("max_depth", 10)
+
+        total = count_items(path, blacklist=blacklist, max_depth=max_depth)
         if total > 1000:
             reply = QMessageBox.question(
                 self, self.config_mgr.get_text("ui_main_warn_too_many_items_title", "項目數量過多"),
@@ -1472,7 +1476,7 @@ class MainWindow(QMainWindow):
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        tree_text = generate_tree(path)
+        tree_text = generate_tree(path, blacklist=blacklist, max_depth=max_depth)
         folder_name = os.path.basename(path.rstrip("/\\")) or "tree"
         tmp_path = os.path.join(tempfile.gettempdir(), f"{folder_name}_tree.txt")
         with open(tmp_path, "w", encoding="utf-8") as f:
