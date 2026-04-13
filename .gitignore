@@ -15,6 +15,7 @@ build/
 *.msi
 *.whl
 *.spec
+!DualPaneFileManager.spec
 *.db
 *.db-shm
 *.db-wal
