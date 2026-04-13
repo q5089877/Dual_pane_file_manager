@@ -11,6 +11,7 @@ DefaultGroupName=DualPaneFileManager
 OutputBaseFilename=DualPaneFileManager_SHL_Setup
 Compression=lzma
 SolidCompression=yes
+OutputDir=Output
 SetupIconFile=app_icon.ico
 UninstallDisplayIcon={app}\DualPaneFileManager.exe
 PrivilegesRequired=lowest

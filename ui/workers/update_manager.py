@@ -127,8 +127,10 @@ def write_update_script(zip_path: str, install_dir: str, exe_name: str = "DualPa
     # PowerShell Expand-Archive 解壓（Windows 10+ 內建）
     script = f"""@echo off
 chcp 65001 >nul
-echo Updating DualPaneFileManager...
-ping -n 3 127.0.0.1 >nul
+echo Waiting for main process to exit...
+timeout /t 2 /nobreak >nul
+taskkill /F /IM {exe_name} >nul 2>&1
+echo Applying update...
 powershell -Command "Expand-Archive -Path '{zip_path}' -DestinationPath '{install_dir}' -Force"
 if exist "{exe_path}" (
     start "" "{exe_path}"

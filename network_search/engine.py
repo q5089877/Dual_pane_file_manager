@@ -452,22 +452,35 @@ class FileScannerModel:
     """單純處理檔案系統 I/O (Producer)，無狀態、無 UI 耦合"""
     def __init__(self, exclude_dirs=None, exclude_exts=None):
         self.global_exclude = {
-            "node_modules", ".git", ".vs", ".idea", "__pycache__", "bin", "obj", "dist", "build",
-            # Windows 系統目錄（無需索引，且含大量深層巢狀檔案）
+            # --- 版本控制 ---
+            ".git", ".svn",
+            # --- Python ---
+            "__pycache__", "venv", ".venv", ".tox", "env", "site-packages",
+            ".pytest_cache", ".mypy_cache", ".ruff_cache",
+            # --- Node.js / 前端框架 ---
+            "node_modules", "bower_components", ".next", ".nuxt", ".svelte-kit",
+            # --- C# / .NET ---
+            "bin", "obj", ".vs", "packages", "testresults",
+            # --- 通用編譯輸出 ---
+            "build", "dist", "out", "target", "debug", "release", "x64", "x86",
+            # --- Java / 建置工具快取 ---
+            ".m2", ".gradle", "gradle",
+            # --- IDE ---
+            ".idea", ".vscode",
+            # --- Rust / .NET 套件快取 ---
+            ".nuget", ".cargo", ".rustup",
+            # --- 暫存 / Log ---
+            "logs", "log", "temp", "tmp",
+            # --- Windows 系統目錄 ---
             "windows", "program files", "program files (x86)", "programdata",
             "softwaredistribution", "windowsapps", "winsxs",
             "$recycle.bin", "system volume information",
-            # Java / 建置工具快取（Maven、Gradle）
-            ".m2", ".gradle", "gradle",
-            # 瀏覽器 / Electron App 快取
+            # --- AppData（全是 app 快取/沙盒，不是使用者檔案）---
+            "appdata",
+            # --- 瀏覽器 / Electron App 快取 ---
             "cache", "caches", "gpucache", "code cache", "crashreports",
             "local storage", "leveldb", "indexeddb", "shader cache",
             "service worker", "cache2", "offline pages",
-            # AppData 整個排除（全是 app 快取/沙盒，不是使用者檔案）
-            "appdata",
-            # 其他開發工具快取
-            ".nuget", ".cargo", ".rustup", "target",
-            "venv", ".venv", "site-packages",
         }
         if exclude_dirs:
             dirs = exclude_dirs.split(",") if isinstance(exclude_dirs, str) else list(exclude_dirs)

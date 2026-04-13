@@ -570,7 +570,7 @@ class SearchDialog(QDialog):
             pane = self.parent()
             if pane and hasattr(pane, 'jump_to_file'):
                 pane.jump_to_file(path)
-            # 不關閉搜尋視窗
+            self.accept()
         elif action == copy_act:
             from PyQt6.QtWidgets import QApplication
             from PyQt6.QtCore import QMimeData, QUrl

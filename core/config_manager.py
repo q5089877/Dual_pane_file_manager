@@ -8,6 +8,7 @@ from pathlib import Path
 class ConfigManager:
     """Handles application configuration and theme loading."""
     APP_VERSION = "1.0.0"
+    GITHUB_REPO  = "q5089877/Dual_pane_file_manager"
     _DEFAULT_UPDATE_SUFFIX = ""
     _DEFAULT_REMOTE_INDEX_SUFFIX = ""
 
@@ -76,6 +77,10 @@ class ConfigManager:
         needs_save = False
         if "language" not in config:
             config["language"] = "zh_TW"
+            needs_save = True
+
+        if "github_repo" not in config:
+            config["github_repo"] = self.GITHUB_REPO
             needs_save = True
 
         self.load_language(config["language"])

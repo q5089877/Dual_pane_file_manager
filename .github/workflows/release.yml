@@ -1,0 +1,70 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Clean old dist
+        shell: pwsh
+        run: |
+          if (Test-Path "dist\DualPaneFileManager") {
+            Remove-Item -Recurse -Force "dist\DualPaneFileManager"
+          }
+
+      - name: Build with PyInstaller
+        run: python -m PyInstaller --clean --noconfirm DualPaneFileManager.spec
+
+      - name: Copy default config
+        run: |
+          if (-not (Test-Path "dist\DualPaneFileManager\config.json")) {
+            Copy-Item "config.example.json" "dist\DualPaneFileManager\config.json"
+          }
+        shell: pwsh
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes
+
+      - name: Sync version to installer.iss
+        shell: pwsh
+        run: |
+          $ver = (Select-String 'APP_VERSION\s*=\s*"(.+)"' core/config_manager.py).Matches.Groups[1].Value
+          Write-Host "Detected version: $ver"
+          (Get-Content installer.iss) -replace '^AppVersion=.*', "AppVersion=$ver" | Set-Content installer.iss
+
+      - name: Compile Inno Setup installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+
+      - name: Create portable zip
+        shell: pwsh
+        run: |
+          Push-Location dist\DualPaneFileManager
+          Compress-Archive -Path * -DestinationPath ..\..\DualPaneFileManager-portable.zip
+          Pop-Location
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Output/DualPaneFileManager_SHL_Setup.exe
+            DualPaneFileManager-portable.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
