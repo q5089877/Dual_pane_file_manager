@@ -20,6 +20,7 @@
     "monitored_paths": [],
     "exclude_exts": [],
     "exclude_dirs": [],
+    "cs_watcher_notify_port": 13377,
 
     "db_settings": {
         "sqlite_timeout": 30,

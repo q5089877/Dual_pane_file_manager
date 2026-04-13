@@ -5,12 +5,49 @@ from PyQt6.QtWidgets import (
     QTreeView, QHeaderView, QMenu, QListWidget, QListWidgetItem,
     QCheckBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QFileInfo, QDateTime
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QFileInfo, QDateTime, QThread
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QFont, QColor
 from PyQt6.QtWidgets import QFileIconProvider, QApplication
+from PyQt6.QtNetwork import QUdpSocket, QHostAddress
 
 import os
+import json
 import datetime
+
+
+class CsIndexWorker(QThread):
+    """Runs DFE.Indexer.exe and relays JSON progress lines to the UI."""
+    progress = pyqtSignal(str)   # status message
+    finished = pyqtSignal(int)   # total_files on completion
+    error    = pyqtSignal(str)   # error message
+
+    def __init__(self, process):
+        super().__init__()
+        self._process = process
+
+    def run(self):
+        total = 0
+        try:
+            for raw in self._process.stdout:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if "error" in data:
+                    self.error.emit(data["error"])
+                    return
+                if "indexed" in data:
+                    self.progress.emit(f"C# 索引中… {data['indexed']} 個檔案")
+                if data.get("status") == "done":
+                    total = data.get("total_files", 0)
+            self._process.wait()
+        except Exception as e:
+            self.error.emit(str(e))
+            return
+        self.finished.emit(total)
 
 
 class SettingsDialog(QDialog):
@@ -111,6 +148,8 @@ class NetworkSearchWindow(QWidget):
         self.config_mgr = config_mgr
         self.config = config_mgr.load_config() if config_mgr else {}
         self.scanner = None
+        self.cs_worker = None
+        self._cs_watch_process = None
         self.icon_provider = QFileIconProvider()
 
         # 搜尋去抖動 (Debouncing)
@@ -119,6 +158,7 @@ class NetworkSearchWindow(QWidget):
         self.search_timer.timeout.connect(self._do_search)
 
         self._init_ui()
+        self._setup_udp_listener()
 
     def _init_ui(self):
         title = self.config_mgr.get_text("ns_main_title", "網路搜尋") if self.config_mgr else "網路搜尋"
@@ -147,9 +187,20 @@ class NetworkSearchWindow(QWidget):
         self.settings_btn = QPushButton(settings_text)
         self.settings_btn.clicked.connect(self.on_settings_clicked)
 
+        self.cs_index_btn = QPushButton("C# 快速索引")
+        self.cs_index_btn.setToolTip("使用 C# 高速引擎建立/更新索引（單次掃描）")
+        self.cs_index_btn.clicked.connect(self.on_cs_index_clicked)
+
+        self.cs_watch_btn = QPushButton("C# 即時監控")
+        self.cs_watch_btn.setToolTip("啟動 C# 即時監控模式（常駐背景，自動更新索引）")
+        self.cs_watch_btn.setCheckable(True)
+        self.cs_watch_btn.clicked.connect(self.on_cs_watch_clicked)
+
         header.addWidget(self.search_input)
         header.addWidget(self.size_filter_cb)
         header.addWidget(self.refresh_btn)
+        header.addWidget(self.cs_index_btn)
+        header.addWidget(self.cs_watch_btn)
         header.addWidget(self.settings_btn)
         self.layout.addLayout(header)
 
@@ -314,6 +365,103 @@ class NetworkSearchWindow(QWidget):
             return f"{size_num:.1f} PB"
         except Exception as e:
             return f"E:{size}"
+
+    def on_cs_index_clicked(self):
+        if self.cs_worker and self.cs_worker.isRunning():
+            return
+
+        root = self.config.get("default_scan_root", "")
+        if not root:
+            warn_title = self.config_mgr.get_text("ns_warn_title", "警告") if self.config_mgr else "警告"
+            QMessageBox.warning(self, warn_title, "請先在設定中設定「預設自動掃描根目錄」")
+            return
+
+        try:
+            process = self.engine.launch_cs_indexer(root)
+        except FileNotFoundError:
+            QMessageBox.critical(self, "錯誤", "找不到 DFE.Indexer.exe，請先執行 dotnet publish 編譯 C# 專案。")
+            return
+
+        self.cs_worker = CsIndexWorker(process)
+        self.cs_worker.progress.connect(self.status_bar.showMessage)
+        self.cs_worker.error.connect(lambda msg: (
+            self.cs_index_btn.setEnabled(True),
+            QMessageBox.critical(self, "C# 索引錯誤", msg)
+        ))
+        self.cs_worker.finished.connect(self._on_cs_index_finished)
+        self.cs_index_btn.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setRange(0, 0)
+        self.cs_worker.start()
+
+    def _on_cs_index_finished(self, total: int):
+        self.progress_bar.setVisible(False)
+        self.cs_index_btn.setEnabled(True)
+        self.status_bar.showMessage(f"C# 索引完成！共索引 {total} 個檔案")
+        self._do_search()
+
+    # ── C# watch mode ─────────────────────────────────────────────────────────
+
+    def on_cs_watch_clicked(self, checked: bool):
+        if checked:
+            self._start_cs_watch()
+        else:
+            self._stop_cs_watch()
+
+    def _start_cs_watch(self):
+        if self._cs_watch_process and self._cs_watch_process.poll() is None:
+            return  # already running
+
+        root = self.config.get("default_scan_root", "")
+        if not root:
+            self.cs_watch_btn.setChecked(False)
+            warn_title = self.config_mgr.get_text("ns_warn_title", "警告") if self.config_mgr else "警告"
+            QMessageBox.warning(self, warn_title, "請先在設定中設定「預設自動掃描根目錄」")
+            return
+
+        port = self.config.get("cs_watcher_notify_port", 13377)
+        try:
+            self._cs_watch_process = self.engine.launch_cs_indexer(
+                root, watch=True, notify_port=port
+            )
+        except FileNotFoundError:
+            self.cs_watch_btn.setChecked(False)
+            QMessageBox.critical(self, "錯誤", "找不到 DFE.Indexer.exe，請先執行 dotnet publish 編譯 C# 專案。")
+            return
+
+        self.cs_watch_btn.setText("■ 監控中")
+        self.status_bar.showMessage(f"C# 即時監控已啟動（{root}），UDP port {port}")
+
+    def _stop_cs_watch(self):
+        if self._cs_watch_process and self._cs_watch_process.poll() is None:
+            self._cs_watch_process.terminate()
+        self._cs_watch_process = None
+        self.cs_watch_btn.setText("C# 即時監控")
+        self.status_bar.showMessage("C# 即時監控已停止")
+
+    def closeEvent(self, event):
+        self._stop_cs_watch()
+        super().closeEvent(event)
+
+    # ── UDP listener (receives notifications from C# FileWatcher) ─────────────
+
+    def _setup_udp_listener(self):
+        port = self.config.get("cs_watcher_notify_port", 13377)
+        self._udp_socket = QUdpSocket(self)
+        bound = self._udp_socket.bind(QHostAddress.SpecialAddress.LocalHost, port)
+        if bound:
+            self._udp_socket.readyRead.connect(self._on_udp_ready)
+
+    def _on_udp_ready(self):
+        while self._udp_socket.hasPendingDatagrams():
+            datagram = self._udp_socket.receiveDatagram()
+            try:
+                data = json.loads(bytes(datagram.data()))
+                if data.get("event") == "index_updated":
+                    # Re-trigger current search with a short debounce
+                    self.search_timer.start(300)
+            except (json.JSONDecodeError, Exception):
+                pass
 
     def on_refresh_clicked(self):
         paths = self.config.get("monitored_paths", [])
