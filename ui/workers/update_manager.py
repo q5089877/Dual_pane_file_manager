@@ -131,7 +131,7 @@ echo Waiting for main process to exit...
 timeout /t 2 /nobreak >nul
 taskkill /F /IM {exe_name} >nul 2>&1
 echo Applying update...
-powershell -Command "Expand-Archive -Path '{zip_path}' -DestinationPath '{install_dir}' -Force"
+powershell -Command "Expand-Archive -Path '{zip_path}' -DestinationPath '{install_dir}' -Force; Remove-Item -Path '{zip_path}' -Force"
 if exist "{exe_path}" (
     start "" "{exe_path}"
 )

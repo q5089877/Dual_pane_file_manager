@@ -45,13 +45,7 @@ if not exist "%DIST_DIR%\config.json" (
 )
 
 :: ── Step 3: 萃取版本號並同步至 installer.iss ─────────────
-for /f "tokens=2 delims==" %%I in ('findstr "APP_VERSION" "core\config_manager.py"') do set RAW_VERSION=%%I
-set "APP_VERSION=%RAW_VERSION:"=%"
-set "APP_VERSION=%APP_VERSION: =%"
-echo [INFO] Detected version: %APP_VERSION%
-
-powershell -Command "(Get-Content 'installer.iss') -replace '^AppVersion=.*', 'AppVersion=%APP_VERSION%' | Set-Content 'installer.iss'"
-echo [INFO] Synced AppVersion=%APP_VERSION% -> installer.iss
+powershell -Command "$ver=(Select-String 'APP_VERSION\s*=\s*\""(.+)\""' 'core\config_manager.py').Matches.Groups[1].Value; (Get-Content 'installer.iss') -replace '^AppVersion=.*',\"AppVersion=$ver\" | Set-Content 'installer.iss'; Write-Host \"[INFO] Synced version: $ver\""
 
 :: ── Step 4: 找 Inno Setup Compiler ───────────────────────
 set "ISCC="
