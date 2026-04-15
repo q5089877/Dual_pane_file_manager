@@ -7,7 +7,7 @@ from pathlib import Path
 
 class ConfigManager:
     """Handles application configuration and theme loading."""
-    APP_VERSION = "1.0.0"
+    APP_VERSION = "1.1.0"
     GITHUB_REPO  = "q5089877/Dual_pane_file_manager"
     _DEFAULT_UPDATE_SUFFIX = ""
     _DEFAULT_REMOTE_INDEX_SUFFIX = ""
