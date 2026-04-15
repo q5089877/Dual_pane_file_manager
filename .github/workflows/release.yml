@@ -69,5 +69,6 @@ jobs:
           files: |
             Output/DualPaneFileManager_SHL_Setup.exe
             DualPaneFileManager-portable.zip
+            bat/deploy_to_company.ps1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
