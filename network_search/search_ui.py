@@ -170,7 +170,7 @@ class NetworkSearchWindow(QWidget):
         # Header
         header = QHBoxLayout()
         self.search_input = QLineEdit()
-        placeholder = self.config_mgr.get_text("ns_main_search_placeholder", "輸入關鍵字搜尋 (例如: .pdf 或 文件名)...") if self.config_mgr else "輸入關鍵字搜尋 (例如: .pdf 或 文件名)..."
+        placeholder = self.config_mgr.get_text("ns_main_search_placeholder", "輸入關鍵字 / 萬用字元 (例如: *.pdf, a*.bmp, abc.*) ...") if self.config_mgr else "輸入關鍵字 / 萬用字元 (例如: *.pdf, a*.bmp, abc.*) ..."
         self.search_input.setPlaceholderText(placeholder)
         self.search_input.textChanged.connect(self.on_search_text_changed)
         self.search_input.setStyleSheet("font-size: 14px; padding: 5px;")

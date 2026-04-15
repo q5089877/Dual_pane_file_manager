@@ -396,7 +396,7 @@ class NetworkSearchWindow(QWidget):
         # Header (Split into two rows for responsiveness)
         top_row = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("輸入關鍵字搜尋 (例如: .pdf 或 文件名)...")
+        self.search_input.setPlaceholderText("輸入關鍵字 / 萬用字元 (例如: *.pdf, a*.bmp, abc.*) ...")
         self.search_input.textChanged.connect(self.on_search_text_changed)
 
         self.refresh_btn = QPushButton("開始索引掃描")

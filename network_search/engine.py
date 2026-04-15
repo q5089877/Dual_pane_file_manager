@@ -92,15 +92,19 @@ class IndexManager:
         settings = ConfigManager().get_db_settings()
         try:
             conn = sqlite3.connect(str(db_path), timeout=settings.get("sqlite_timeout", 30), check_same_thread=False, uri=True)
+            # Disable Python's implicit transaction management.
+            # With the default isolation_level="", Python auto-issues BEGIN before
+            # every DML statement. Combined with manual BEGIN TRANSACTION calls in
+            # ScanPresenter, this causes "cannot start a transaction within a
+            # transaction" errors. Setting isolation_level=None (autocommit mode)
+            # lets all transaction boundaries be controlled explicitly.
+            conn.isolation_level = None
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute("PRAGMA synchronous=NORMAL;")
             cache_size = settings.get("wal_cache_size", -10000)
             conn.execute(f"PRAGMA cache_size={cache_size};")
             busy_ms = settings.get("busy_timeout_ms", 5000)
             conn.execute(f"PRAGMA busy_timeout={busy_ms};")
-            # Ensure schema exists (folders, files_index, fts_index)
-            # _ensure_schema is called by _init_db, which is called in __init__
-            # self._ensure_schema(conn)
             return conn
         except Exception as e:
             logging.error(f"Failed to connect to {db_path}: {e}")
@@ -226,19 +230,32 @@ class IndexManager:
 
         # Clean and check for global search
         keyword = (keyword or "").strip()
-        # Robust detection of global patterns that shouldn't trigger FTS MATCH
-        clean_check = keyword.replace("*", "").strip()
-        is_global_search = keyword in ("*.*", "*", "") or clean_check in ("", ".")
+
+        # 1. 全域搜尋：* 或 *.* 且沒有其他有效字元
+        is_global_search = keyword in ("*", "*.*", "")
+
+        # 2. 萬用字元模式：含 * 或 ? 但非全域搜尋
+        has_wildcard = ('*' in keyword or '?' in keyword) and not is_global_search
 
         # Build parts of the query
         if is_global_search:
             join_fts = ""
             match_sql = "1"
+        elif has_wildcard:
+            # 三段式轉換：① 跳脫 SQLite LIKE 特殊字元 → ② 替換 DOS 萬用字元
+            like_pat = (keyword
+                        .replace('!', '!!')
+                        .replace('%', '!%')
+                        .replace('_', '!_')
+                        .replace('*', '%')
+                        .replace('?', '_'))
+            join_fts = ""
+            match_sql = "f.name LIKE ? ESCAPE '!'"
+            keyword = like_pat  # 覆寫 keyword，讓下方 params.append(keyword) 傳入正確 pattern
         else:
-            # FTS5 matches tokens. We wrap in double quotes to handle special chars (dots, spaces)
-            # and append * for prefix matching.
+            # 原有 FTS5 邏輯不變
             clean_kw = keyword.replace('"', '').replace("*", "").strip()
-            if clean_kw and len(clean_kw) > 0:
+            if clean_kw:
                 keyword = f'"{clean_kw}"*'
                 join_fts = f"JOIN {{db}}.fts_index fts ON f.id = fts.rowid"
                 match_sql = "fts.name MATCH ?"
@@ -552,44 +569,76 @@ class FileScannerModel:
 
         self.prefix_blacklist = ('~$', '.~', '$')
 
+    # Timeout (seconds) for a single os.scandir() call.
+    # Windows junctions/reparse points pointing to unavailable network paths
+    # can block os.scandir() indefinitely — this guard skips them cleanly.
+    SCANDIR_TIMEOUT = 5.0
+
     def scan_folder(self, folder_path, depth, max_depth, mtime, mtime_cache, force_rescan):
         """讀取單一資料夾並返回指紋與檔案清單 (純資料 I/O)"""
         files_to_index = []
         subfolders = []
         actual_max_mtime = mtime
-        
+
         normalized_path = os.path.normpath(folder_path)
         cached_mtime = mtime_cache.get(normalized_path.lower())
 
-        try:
-            with os.scandir(folder_path) as it:
-                for entry in it:
-                    name_low = entry.name.lower()
-                    if name_low in self.global_exclude or any(name_low.startswith(p) for p in self.prefix_blacklist):
-                        continue
+        # --- os.scandir() with timeout guard ---
+        # os.scandir() has no built-in timeout on Windows. Junction points or
+        # virtual drives (e.g. F:\) that become unresponsive will block the
+        # worker thread forever. Run the enumeration in a daemon thread and
+        # abandon it after SCANDIR_TIMEOUT seconds.
+        import threading
+        entries: list = []
+        scan_error: list = [None]
+        scan_done = threading.Event()
 
-                    try:
-                        if entry.is_dir(follow_symlinks=False):
-                            # 跳過所有隱藏資料夾（以 . 開頭），如 .cache .claude .config .m2 等
-                            if name_low.startswith('.'):
-                                continue
-                            s = entry.stat()
-                            subfolders.append((entry.path, depth + 1, s.st_mtime))
-                            files_to_index.append((entry.path, entry.name, 0, s.st_mtime))
-                        elif entry.is_file(follow_symlinks=False):
-                            ext = os.path.splitext(name_low)[1]
-                            if ext in self.ext_blacklist: continue
-                            
-                            s = entry.stat()
-                            files_to_index.append((entry.path, entry.name, s.st_size, s.st_mtime))
-                            if s.st_mtime > actual_max_mtime:
-                                actual_max_mtime = s.st_mtime
-                    except (PermissionError, OSError):
-                        continue
+        def _do_scandir():
+            try:
+                with os.scandir(folder_path) as it:
+                    entries.extend(it)
+            except Exception as e:
+                scan_error[0] = e
+            finally:
+                scan_done.set()
+
+        t = threading.Thread(target=_do_scandir, daemon=True)
+        t.start()
+        if not scan_done.wait(timeout=self.SCANDIR_TIMEOUT):
+            logging.warning(f"scan_folder: timeout scanning '{folder_path}', skipping.")
+            return None
+
+        if scan_error[0] is not None:
+            return None
+
+        try:
+            for entry in entries:
+                name_low = entry.name.lower()
+                if name_low in self.global_exclude or any(name_low.startswith(p) for p in self.prefix_blacklist):
+                    continue
+
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        # 跳過所有隱藏資料夾（以 . 開頭），如 .cache .claude .config .m2 等
+                        if name_low.startswith('.'):
+                            continue
+                        s = entry.stat()
+                        subfolders.append((entry.path, depth + 1, s.st_mtime))
+                        files_to_index.append((entry.path, entry.name, 0, s.st_mtime))
+                    elif entry.is_file(follow_symlinks=False):
+                        ext = os.path.splitext(name_low)[1]
+                        if ext in self.ext_blacklist:
+                            continue
+                        s = entry.stat()
+                        files_to_index.append((entry.path, entry.name, s.st_size, s.st_mtime))
+                        if s.st_mtime > actual_max_mtime:
+                            actual_max_mtime = s.st_mtime
+                except (PermissionError, OSError):
+                    continue
 
             should_update = (
-                force_rescan or 
-                cached_mtime is None or 
+                force_rescan or
+                cached_mtime is None or
                 abs(cached_mtime - actual_max_mtime) > 0.1
             )
 

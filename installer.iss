@@ -3,10 +3,10 @@ AppId={{A7B8C9D0-E1F2-4A3B-8C5D-6E7F8A9B0C1D}
 AppName=DualPaneFileManager
 AppVersion=1.0.0
 AppPublisher=SHL
-; --- 修正後的路徑寫法 ---
+; 預設安裝在 %USERPROFILE%\DevRepositories\SHL\DualPaneApp
+; 符合公司規定路徑，使用者仍可在安裝時修改
 DefaultDirName={%USERPROFILE}\DevRepositories\SHL\DualPaneApp
-; -----------------------
-DisableDirPage=yes
+DisableDirPage=no
 DefaultGroupName=DualPaneFileManager
 OutputBaseFilename=DualPaneFileManager_SHL_Setup
 Compression=lzma
