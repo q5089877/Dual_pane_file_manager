@@ -99,3 +99,44 @@ QStatusBar {
     color: {{textMuted}};
     border-top: 1px solid {{border}};
 }
+
+/* --- CheckBoxes & RadioButtons --- */
+QCheckBox, QRadioButton {
+    spacing: 8px;
+    color: {{text}};
+    outline: none;
+}
+
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    background-color: {{panelBg}};
+    border: 1.5px solid {{border}}; /* 加粗邊框 */
+}
+
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+    border-color: {{accent}};
+    background-color: rgba(88, 166, 255, 0.05);
+}
+
+QCheckBox::indicator:checked {
+    background-color: {{accent}};
+    border-color: {{accent}};
+    image: url("ui/check_active.svg");
+}
+
+QCheckBox::indicator:unchecked {
+    border: 1.5px solid {{border}};
+}
+
+QRadioButton::indicator {
+    border-radius: 9px;
+}
+
+QRadioButton::indicator:checked {
+    background-color: {{accent}};
+    border-color: {{accent}};
+    image: url("ui/check_active.svg");
+}
+

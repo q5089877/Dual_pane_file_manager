@@ -58,6 +58,10 @@ svg_icons = {
     # 11. x (close)
     "close": """<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
   <path d="M4 4L12 12M4 12L12 4" stroke="{color}" stroke-width="{stroke}" stroke-linecap="round" fill="none"/>
+</svg>""",
+    # 12. check (checkmark)
+    "check": """<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <path d="M3.5 8L6.5 11L12.5 5" stroke="{color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>"""
 }
 
