@@ -2,10 +2,11 @@ import os
 import fnmatch
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QToolButton, QPushButton,
-    QStackedWidget, QMessageBox, QLabel, QFrame
+    QStackedWidget, QMessageBox, QLabel, QFrame, QTreeView, QAbstractItemView,
+    QHeaderView as _QHeaderView,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QDir, QThread, QSortFilterProxyModel, QTimer, QPoint, pyqtSlot, QDateTime, QDate
-from PyQt6.QtGui import QFileSystemModel, QIcon
+from PyQt6.QtGui import QFileSystemModel, QIcon, QStandardItemModel, QStandardItem
 
 import shutil
 from ui.widgets.file_tree_view import FileTreeView
@@ -100,6 +101,71 @@ class _DirScanWorker(QThread):
             pass
         if not self._cancelled:
             self.result_ready.emit(self._dir_path, matched_count)
+
+
+class _FlatScanWorker(QThread):
+    """背景遞迴掃描，以分批方式回報符合條件的檔案（Everything 平面列表用）。"""
+    batch_ready = pyqtSignal(list)   # list of (name, full_path, size_bytes, date_str, dir_path)
+    scan_done   = pyqtSignal(int)    # total_count
+
+    def __init__(self, root: str, filter_text: str, is_wildcard: bool,
+                 min_bytes: int = 0, date_filter_days: int = 0, parent=None):
+        super().__init__(parent)
+        self._root = root
+        self._filter_text = filter_text.lower()
+        self._is_wildcard = is_wildcard
+        self._min_bytes = min_bytes
+        self._date_filter_days = date_filter_days
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self) -> None:
+        import time
+        from PyQt6.QtCore import QDirIterator, QDir, QDateTime, QDate
+        flags = QDir.Filter.Files | QDir.Filter.NoDotAndDotDot
+        it = QDirIterator(self._root, flags, QDirIterator.IteratorFlag.Subdirectories)
+        buffer: list = []
+        total = 0
+        last_emit = time.monotonic()
+        try:
+            while it.hasNext() and not self._cancelled:
+                it.next()
+                if self._filter_text:
+                    name = it.fileName().lower()
+                    matched = (fnmatch.fnmatch(name, self._filter_text)
+                               if self._is_wildcard else self._filter_text in name)
+                    if not matched:
+                        continue
+                fi = it.fileInfo()
+                if self._min_bytes > 0 and fi.size() < self._min_bytes:
+                    continue
+                if self._date_filter_days > 0:
+                    lm = fi.lastModified()
+                    if self._date_filter_days == 1:
+                        if lm.date() != QDate.currentDate():
+                            continue
+                    else:
+                        if lm < QDateTime.currentDateTime().addDays(-self._date_filter_days):
+                            continue
+                buffer.append((it.fileName(), it.filePath(),
+                               fi.size(),
+                               fi.lastModified().toString("yyyy-MM-dd HH:mm"),
+                               fi.absolutePath()))
+                total += 1
+                now = time.monotonic()
+                if len(buffer) >= 50 or (now - last_emit) >= 0.1:
+                    self.batch_ready.emit(list(buffer))
+                    buffer.clear()
+                    last_emit = now
+                    time.sleep(0.001)
+        except Exception:
+            pass
+        if buffer and not self._cancelled:
+            self.batch_ready.emit(buffer)
+        if not self._cancelled:
+            self.scan_done.emit(total)
 
 
 class FolderFilterProxyModel(QSortFilterProxyModel):
@@ -700,6 +766,31 @@ class ExplorerPane(QWidget):
         self.home_view.clicked.connect(lambda: self.focused.emit(self))
         self.view_stack.addWidget(self.home_view)
 
+        # ── Everything 平面搜尋結果視圖 ─────────────────────────────
+        self.flat_model = QStandardItemModel()
+        self.flat_model.setHorizontalHeaderLabels(["名稱", "大小", "修改日期", "所在路徑"])
+        self.flat_view = QTreeView()
+        self.flat_view.setModel(self.flat_model)
+        self.flat_view.setRootIsDecorated(False)
+        self.flat_view.setSortingEnabled(True)
+        self.flat_view.setObjectName("flatResultView")
+        self.flat_view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
+        self.flat_view.setEditTriggers(QTreeView.EditTrigger.NoEditTriggers)
+        self.flat_view.setAlternatingRowColors(True)
+        self.flat_view.clicked.connect(lambda: self.focused.emit(self))
+        self.flat_view.doubleClicked.connect(self._on_flat_double_clicked)
+        self.flat_view.header().setStretchLastSection(True)
+        self.view_stack.addWidget(self.flat_view)
+        QTimer.singleShot(0, lambda: (
+            self.flat_view.setColumnWidth(0, 280),
+            self.flat_view.setColumnWidth(1, 90),
+            self.flat_view.setColumnWidth(2, 150),
+        ))
+        self._flat_worker: _FlatScanWorker | None = None
+        self._current_size_filter: int = 0
+        self._current_date_filter: int = 0
+        # ────────────────────────────────────────────────────────────
+
         from PyQt6.QtWidgets import QHeaderView
         header = self.tree.header()
         header.setSectionsMovable(True)  # 允許欄位左右移動位置
@@ -729,9 +820,6 @@ class ExplorerPane(QWidget):
         self._sql_timer.setInterval(200)
         self._sql_timer.timeout.connect(self._run_sql_filter)
         self._index_manager = None  # 由外部注入
-
-        # 連接背景掃描計數 signal
-        self.proxy_model.file_count_changed.connect(self._on_file_count_changed)
 
         layout.addWidget(self.view_stack)
 
@@ -854,6 +942,9 @@ class ExplorerPane(QWidget):
             self.set_view_mode(self._current_mode)
         self.path_edit.setText(path)
         self.path_changed.emit(path)
+        # 若屬性過濾仍啟用（無文字但有大小/時間），重新用新路徑觸發掃描
+        if not self.search_edit.text() and (self._current_size_filter or self._current_date_filter):
+            self._activate_search_mode()
 
     def go_back(self):
         self.presenter.go_back()
@@ -865,50 +956,10 @@ class ExplorerPane(QWidget):
         self.presenter.go_up()
 
     def on_search_changed(self, text):
-        curr_path = self.path_edit.text().strip()
-        curr_norm = os.path.normpath(curr_path).lower() if curr_path else ""
-
-        # ── 搜尋欄清空 ────────────────────────────────────────────
-        if not text:
-            self._search_status_label.setVisible(False)
-
-        # ── 根目錄防禦 ─────────────────────────────────────────────
-        # 未索引的根磁碟（如 C:\、D:\）：少於 3 字元不觸發掃描
-        is_root_drive = len(curr_norm) <= 3 and curr_norm.endswith(":\\")
-        if text and is_root_drive and len(text.strip()) < 3:
-            # 清空過濾，靜默等待使用者多打幾個字
-            for p in [self.proxy_model, self.list_proxy]:
-                p.setFilterFixedString("")
-            self._sql_timer.stop()
-            self._clear_sql_hits()
-            return
-        # ──────────────────────────────────────────────────────────
-
-        for p in [self.proxy_model, self.list_proxy]:
-            if "*" in text or "?" in text:
-                p.setFilterWildcard(text)
-            else:
-                p.setFilterFixedString(text)
-
-        # 非索引路徑設定最大掃描深度（根目錄限5層，一般目錄不限）
-        max_depth = 4 if is_root_drive else 0
-        for p in [self.proxy_model, self.list_proxy]:
-            p._max_scan_depth = max_depth
-
-        # 根目錄深度掃描警告
-        if text and is_root_drive:
-            msg = self.config_mgr.get_text("ui_pane_msg_deep_scan_warning", "⚠️ 正在根目錄執行深度掃描（限4層），可能需要較長時間") if self.config_mgr else "⚠️ 正在根目錄執行深度掃描（限4層），可能需要較長時間"
-            self.status_updated.emit(msg)
-
-        # 篩選變更後，layoutChanged 會在事件循環中重設 rootIndex
-        # 用 debounce timer 確保在所有非同步更新完成後才還原
-        self._root_restore_timer.start(50)
-
-        if text and self._index_manager:
-            self._sql_timer.start()
-        else:
-            self._sql_timer.stop()
-            self._clear_sql_hits()
+        if text:
+            self._activate_search_mode()
+        elif not self._current_size_filter and not self._current_date_filter:
+            self._deactivate_search_mode()
 
     def _restore_root_from_path(self):
         text = self.search_edit.text()
@@ -1031,6 +1082,90 @@ class ExplorerPane(QWidget):
         for p in [self.proxy_model, self.list_proxy]:
             p.set_sql_hits(set(), "")
 
+    # ── Everything 平面搜尋模式 ──────────────────────────────────
+
+    @staticmethod
+    def _fmt_size(n: int) -> str:
+        for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+            if n < 1024:
+                return f"{n} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+            n /= 1024
+        return f"{n:.1f} TiB"
+
+    def _activate_search_mode(self) -> None:
+        text = self.search_edit.text().strip()
+        is_wildcard = "*" in text or "?" in text
+
+        if self._flat_worker:
+            self._flat_worker.cancel()
+            try:
+                self._flat_worker.batch_ready.disconnect()
+                self._flat_worker.scan_done.disconnect()
+            except RuntimeError:
+                pass
+            self._flat_worker.finished.connect(self._flat_worker.deleteLater)
+            self._flat_worker = None
+
+        self.flat_model.removeRows(0, self.flat_model.rowCount())
+        self.view_stack.setCurrentWidget(self.flat_view)
+        self._search_status_label.setText("  掃描中...")
+        self._search_status_label.setVisible(True)
+
+        self._flat_worker = _FlatScanWorker(
+            self._current_path, text, is_wildcard,
+            self._current_size_filter, self._current_date_filter, parent=self
+        )
+        self._flat_worker.batch_ready.connect(self._on_flat_batch)
+        self._flat_worker.scan_done.connect(self._on_flat_done)
+        self._flat_worker.finished.connect(self._flat_worker.deleteLater)
+        self._flat_worker.start()
+
+    def _deactivate_search_mode(self) -> None:
+        if self._flat_worker:
+            self._flat_worker.cancel()
+            try:
+                self._flat_worker.batch_ready.disconnect()
+                self._flat_worker.scan_done.disconnect()
+            except RuntimeError:
+                pass
+            self._flat_worker.finished.connect(self._flat_worker.deleteLater)
+            self._flat_worker = None
+        self.flat_model.removeRows(0, self.flat_model.rowCount())
+        self._search_status_label.setVisible(False)
+        # 回到原始瀏覽視圖
+        if self._current_mode == "icons":
+            self.view_stack.setCurrentWidget(self.list_view)
+        else:
+            self.view_stack.setCurrentWidget(self.tree)
+
+    def _on_flat_batch(self, items: list) -> None:
+        for name, full_path, size_bytes, date_str, dir_path in items:
+            name_item = QStandardItem(name)
+            name_item.setData(full_path, Qt.ItemDataRole.UserRole)
+            size_item = QStandardItem(self._fmt_size(size_bytes))
+            size_item.setData(size_bytes, Qt.ItemDataRole.UserRole)
+            size_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            date_item = QStandardItem(date_str)
+            loc_item  = QStandardItem(dir_path)
+            self.flat_model.appendRow([name_item, size_item, date_item, loc_item])
+        count = self.flat_model.rowCount()
+        self._search_status_label.setText(f"  找到 {count} 個檔案（掃描中...）")
+
+    def _on_flat_done(self, total: int) -> None:
+        self._search_status_label.setText(f"  找到 {total} 個檔案")
+        self._flat_worker = None
+
+    def _on_flat_double_clicked(self, index) -> None:
+        full_path = self.flat_model.item(index.row(), 0).data(Qt.ItemDataRole.UserRole)
+        if full_path and os.path.isfile(full_path):
+            import subprocess
+            try:
+                os.startfile(full_path)
+            except Exception:
+                subprocess.Popen(["explorer", "/select,", full_path])
+
+    # ─────────────────────────────────────────────────────────────
+
     def _file_view(self):
         """回傳當前實際的檔案視圖（tree 或 list_view），home_view 時退回 tree。"""
         w = self.view_stack.currentWidget()
@@ -1047,14 +1182,20 @@ class ExplorerPane(QWidget):
     def _on_size_filter(self, val: int) -> None:
         for btn, v in zip(self._size_btns, self._size_values):
             btn.setChecked(v == val)
-        self.proxy_model.set_size_filter(val)
-        self.list_proxy.set_size_filter(val)
+        self._current_size_filter = val
+        self._refresh_search_mode()
 
     def _on_date_filter(self, val: int) -> None:
         for btn, v in zip(self._date_btns, self._date_values):
             btn.setChecked(v == val)
-        self.proxy_model.set_date_filter(val)
-        self.list_proxy.set_date_filter(val)
+        self._current_date_filter = val
+        self._refresh_search_mode()
+
+    def _refresh_search_mode(self) -> None:
+        if self.search_edit.text() or self._current_size_filter or self._current_date_filter:
+            self._activate_search_mode()
+        else:
+            self._deactivate_search_mode()
 
     def open_advanced_search(self):
         from ui.widgets.dialogs import SearchDialog

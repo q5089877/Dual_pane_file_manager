@@ -857,6 +857,33 @@ QToolButton#advSearchBtn:checked {
 }
 /* ────────────────────────────────────────────────────────────── */
 
+/* ── 平面搜尋結果視圖（Everything 風格）──────────────────────── */
+QTreeView#flatResultView {
+    background-color: {{bg}};
+    color: {{text}};
+    border: none;
+    alternate-background-color: {{panelBg}};
+}
+QTreeView#flatResultView::item {
+    padding: 3px 6px;
+    border: none;
+}
+QTreeView#flatResultView::item:selected {
+    background-color: {{activeTab}};
+    color: #ffffff;
+}
+QTreeView#flatResultView::item:hover {
+    background-color: {{accentSubtle}};
+}
+QTreeView#flatResultView QHeaderView::section {
+    background-color: {{headerBg}};
+    color: {{text}};
+    border: none;
+    border-right: 1px solid {{border}};
+    padding: 4px 6px;
+}
+/* ────────────────────────────────────────────────────────────── */
+
 /* Search input with left icon (icon added via code addAction) */
 QLineEdit#searchEdit {
     padding-left: 5px;
