@@ -770,7 +770,8 @@ QToolButton#upBtn,
 QToolButton#paneHomeBtn,
 QToolButton#paneCustomPathsBtn,
 QToolButton#listViewBtn,
-QToolButton#gridViewBtn {
+QToolButton#gridViewBtn,
+QToolButton#advSearchBtn {
     padding: 4px; /* 增加到 4px，讓 16px 圖示在 24px 按鈕中更通透 */
     min-width: 24px;
     min-height: 24px;
@@ -784,6 +785,7 @@ QToolButton#paneHomeBtn    { image: url(ui/home.svg); }
 QToolButton#paneCustomPathsBtn { image: url(ui/bookmark.svg); }
 QToolButton#listViewBtn    { image: url(ui/list_view.svg); }
 QToolButton#gridViewBtn    { image: url(ui/grid_view.svg); }
+QToolButton#advSearchBtn   { image: url(ui/filter.svg); }
 
 /* Disabled state — dimmed gray icons */
 QToolButton#backBtn:disabled    { image: url(ui/left_arrow_disabled.svg); }
@@ -800,6 +802,60 @@ QToolButton#listViewBtn[active="true"] {
 QToolButton#gridViewBtn[active="true"] {
     image: url(ui/grid_view_active.svg);
 }
+
+/* ── 過濾抽屜 ────────────────────────────────────────────────── */
+QFrame#filterDrawer {
+    background-color: {{panelBg}};
+    border-top: 1px solid {{border}};
+    border-bottom: 1px solid {{border}};
+}
+
+QFrame#filterDrawer QLabel {
+    color: #9ca3af;
+    font-size: 10pt;
+    min-width: 32px;
+}
+
+QPushButton#filterChipBtn {
+    background-color: transparent;
+    color: {{text}};
+    border: 1px solid {{border}};
+    border-radius: 10px;
+    padding: 2px 10px;
+    font-size: 9pt;
+}
+
+QPushButton#filterChipBtn:hover {
+    background-color: {{activeTab}};
+    color: #ffffff;
+}
+
+QPushButton#filterChipBtn:checked {
+    background-color: {{activeTab}};
+    color: #ffffff;
+    border-color: {{activeTab}};
+}
+
+QPushButton#deepSearchLink {
+    color: #4a90d9;
+    background-color: transparent;
+    border: none;
+    padding: 0px 2px;
+    font-size: 9pt;
+    text-align: left;
+}
+
+QPushButton#deepSearchLink:hover {
+    color: #6ab0f5;
+    text-decoration: underline;
+}
+
+/* advSearchBtn 啟用（抽屜展開）狀態 */
+QToolButton#advSearchBtn:checked {
+    background-color: rgba(88, 166, 255, 0.15);
+    border-color: rgba(88, 166, 255, 0.5);
+}
+/* ────────────────────────────────────────────────────────────── */
 
 /* Search input with left icon (icon added via code addAction) */
 QLineEdit#searchEdit {

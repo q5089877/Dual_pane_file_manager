@@ -604,19 +604,6 @@ class MainWindow(QMainWindow):
 
         self.tool_bar.addSeparator()
 
-        # ── 進階尋找按鈕 ──────────────────────────────────────
-        from PyQt6.QtWidgets import QToolButton
-        search_btn = QToolButton()
-        search_btn.setText(self.config_mgr.get_text("ui_main_btn_search", "進階尋找"))
-        search_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("search")))
-        search_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        search_btn.setToolTip(self.config_mgr.get_text("ui_main_btn_search_tooltip", "開啟進階搜尋對話框"))
-        search_btn.setObjectName("searchBtn")
-        search_btn.clicked.connect(self.on_advanced_search_clicked)
-        self.tool_bar.addWidget(search_btn)
-
-        self.tool_bar.addSeparator()
-
         # ── 群組 3：進階功能（低頻）──────────────────────────
         snap_btn = QToolButton()
         snap_btn.setText(self.config_mgr.get_text("ui_main_btn_snapshot", "情境快照"))

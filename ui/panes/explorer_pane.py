@@ -1,10 +1,10 @@
 import os
 import fnmatch
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QToolButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QToolButton, QPushButton,
     QStackedWidget, QMessageBox, QLabel, QFrame
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QDir, QThread, QSortFilterProxyModel, QTimer, QPoint, pyqtSlot
+from PyQt6.QtCore import Qt, pyqtSignal, QDir, QThread, QSortFilterProxyModel, QTimer, QPoint, pyqtSlot, QDateTime, QDate
 from PyQt6.QtGui import QFileSystemModel, QIcon
 
 import shutil
@@ -39,12 +39,15 @@ class _DirScanWorker(QThread):
     result_ready = pyqtSignal(str, int)  # (dir_path, matched_count)
 
     def __init__(self, dir_path: str, filter_text: str, is_wildcard: bool,
-                 max_depth: int = 0, parent=None):
+                 max_depth: int = 0, min_bytes: int = 0,
+                 date_filter_days: int = 0, parent=None):
         super().__init__(parent)
         self._dir_path = dir_path
         self._filter_text = filter_text.lower()
         self._is_wildcard = is_wildcard
         self._max_depth = max_depth
+        self._min_bytes = min_bytes
+        self._date_filter_days = date_filter_days
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -52,7 +55,7 @@ class _DirScanWorker(QThread):
 
     def run(self) -> None:
         import time
-        from PyQt6.QtCore import QDirIterator, QDir
+        from PyQt6.QtCore import QDirIterator, QDir, QDateTime, QDate
         flags = QDir.Filter.Files | QDir.Filter.NoDotAndDotDot
         it = QDirIterator(self._dir_path, flags, QDirIterator.IteratorFlag.Subdirectories)
         base_depth = self._dir_path.rstrip("/\\").count(os.sep)
@@ -63,20 +66,36 @@ class _DirScanWorker(QThread):
                 it.next()
                 scanned += 1
                 if scanned % 500 == 0:
-                    time.sleep(0.001)   # 每 500 項讓出 1ms 給 GIL
+                    time.sleep(0.001)
                 if scanned > 5000:
-                    break               # 超過上限，以部分計數回報
+                    break
                 if self._max_depth > 0:
                     depth = it.filePath().rstrip("/\\").count(os.sep)
                     if depth > base_depth + self._max_depth:
                         continue
-                name = it.fileName().lower()
-                if self._is_wildcard:
-                    if fnmatch.fnmatch(name, self._filter_text):
-                        matched_count += 1
-                else:
-                    if self._filter_text in name:
-                        matched_count += 1
+                # 名稱比對（只在有文字過濾時才檢查）
+                if self._filter_text:
+                    name = it.fileName().lower()
+                    if self._is_wildcard:
+                        if not fnmatch.fnmatch(name, self._filter_text):
+                            continue
+                    else:
+                        if self._filter_text not in name:
+                            continue
+                # 大小過濾
+                fi = it.fileInfo()
+                if self._min_bytes > 0 and fi.size() < self._min_bytes:
+                    continue
+                # 時間過濾
+                if self._date_filter_days > 0:
+                    last_mod = fi.lastModified()
+                    if self._date_filter_days == 1:
+                        if last_mod.date() != QDate.currentDate():
+                            continue
+                    else:
+                        if last_mod < QDateTime.currentDateTime().addDays(-self._date_filter_days):
+                            continue
+                matched_count += 1
         except Exception:
             pass
         if not self._cancelled:
@@ -85,7 +104,7 @@ class _DirScanWorker(QThread):
 
 class FolderFilterProxyModel(QSortFilterProxyModel):
     """Custom proxy to ensure current root and ancestors are never filtered out."""
-    file_count_changed = pyqtSignal(int, bool)  # (count, is_scanning)
+    file_count_changed = pyqtSignal(bool)        # is_scanning
 
     def __init__(self, config_mgr=None, parent=None):
         self.config_mgr = config_mgr
@@ -101,7 +120,20 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
         self._max_scan_depth: int = 0            # 0 = 無限制；>0 = 限制 QDirIterator 深度
         self._scanning_dirs: set[str] = set()   # 正在背景掃描中的目錄路徑
         self._scan_workers: dict[str, _DirScanWorker] = {}  # 路徑 → Worker
-        self._total_matched_files: int = 0      # 累計命中檔案數
+        self._size_filter_bytes: int = 0        # 0 = 不過濾；>0 = 最小位元組數
+        self._date_filter_days: int = 0         # 0 = 不過濾；1 = 今日；7 = 本週；30 = 本月
+
+    def set_size_filter(self, min_bytes: int) -> None:
+        self._size_filter_bytes = min_bytes
+        self.cancel_all_scans()
+        self._count_cache.clear()
+        self.invalidateFilter()
+
+    def set_date_filter(self, days: int) -> None:
+        self._date_filter_days = days
+        self.cancel_all_scans()
+        self._count_cache.clear()
+        self.invalidateFilter()
 
     def set_root_path(self, path):
         # 強制轉為 Qt 慣用的正斜線，避免與 model.filePath() 比對失敗
@@ -135,18 +167,17 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
             w.finished.connect(w.deleteLater)
         self._scan_workers.clear()
         self._scanning_dirs.clear()
-        self._total_matched_files = 0
 
     def _on_scan_result(self, dir_path: str, matched_count: int) -> None:
         """Worker 掃描完成回呼：更新快取、累計計數、條件式重繪。"""
         self._scanning_dirs.discard(dir_path)
         self._scan_workers.pop(dir_path, None)
         has_match = matched_count > 0
-        cache_key = f"{dir_path}::{self._filter_text}::{self._is_wildcard}::{self._max_scan_depth}"
+        cache_key = (f"{dir_path}::{self._filter_text}::{self._is_wildcard}"
+                     f"::{self._max_scan_depth}::{self._size_filter_bytes}::{self._date_filter_days}")
         self._count_cache[cache_key] = has_match
-        self._total_matched_files += matched_count
         is_scanning = len(self._scanning_dirs) > 0
-        self.file_count_changed.emit(self._total_matched_files, is_scanning)
+        self.file_count_changed.emit(is_scanning)
         # 條件式重繪：只有「樂觀放行」翻盤成「確定無匹配」時才觸發重繪
         # has_match=True 時，資料夾本就顯示中，無需重繪避免閃爍
         if not has_match:
@@ -164,7 +195,8 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
 
     def _has_matching_file(self, dir_path: str) -> bool:
         """非同步版：先樂觀放行，背景 Worker 掃完後再 invalidateFilter 修正。"""
-        cache_key = f"{dir_path}::{self._filter_text}::{self._is_wildcard}::{self._max_scan_depth}"
+        cache_key = (f"{dir_path}::{self._filter_text}::{self._is_wildcard}"
+                     f"::{self._max_scan_depth}::{self._size_filter_bytes}::{self._date_filter_days}")
         # 1. 快取命中 → O(1) 直接回傳
         if cache_key in self._count_cache:
             return self._count_cache[cache_key]
@@ -173,8 +205,9 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
             return True
         # 3. 啟動背景 Worker，樂觀放行等待結果
         self._scanning_dirs.add(dir_path)
-        # parent=self 讓 Qt 接管 C++ 物件生命週期，防止 GC 在執行緒結束前回收
-        w = _DirScanWorker(dir_path, self._filter_text, self._is_wildcard, self._max_scan_depth, parent=self)
+        w = _DirScanWorker(dir_path, self._filter_text, self._is_wildcard,
+                           self._max_scan_depth, self._size_filter_bytes,
+                           self._date_filter_days, parent=self)
         w.result_ready.connect(self._on_scan_result)
         w.finished.connect(w.deleteLater)
         self._scan_workers[dir_path] = w
@@ -182,11 +215,43 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
         return True  # 樂觀放行，掃完後觸發 invalidateFilter 修正
 
     def filterAcceptsRow(self, source_row, source_parent):
-        if not self._filter_text:
+        has_text = bool(self._filter_text)
+        has_size = self._size_filter_bytes > 0
+        has_date = self._date_filter_days > 0
+
+        if not has_text and not has_size and not has_date:
             return True
 
         model = self.sourceModel()
         idx = model.index(source_row, 0, source_parent)
+        is_dir = model.isDir(idx)
+
+        # ── 大小 / 時間過濾：只對檔案生效，資料夾永遠放行 ─────────
+        if not is_dir:
+            if has_size and model.size(idx) < self._size_filter_bytes:
+                return False
+            if has_date:
+                last_mod = model.fileInfo(idx).lastModified()
+                if self._date_filter_days == 1:
+                    if last_mod.date() != QDate.currentDate():
+                        return False
+                else:
+                    cutoff = QDateTime.currentDateTime().addDays(-self._date_filter_days)
+                    if last_mod < cutoff:
+                        return False
+        # ────────────────────────────────────────────────────────────
+
+        if not has_text:
+            if not is_dir:
+                return True  # 檔案已通過屬性檢查
+            # 有屬性過濾但無文字 → 資料夾遞迴掃描，行為與文字過濾一致
+            if self._current_root_path:
+                path = model.filePath(idx).replace('\\', '/').lower()
+                if self._current_root_path.startswith(path):
+                    return True  # 祖先保護
+                if path.startswith(self._current_root_path):
+                    return self._has_matching_file(model.filePath(idx))
+            return True
 
         # ── SQL 快速路徑 ──────────────────────────────────────────
         if self._sql_active and self._sql_covered_prefix:
@@ -194,9 +259,8 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
             if filepath.startswith(self._sql_covered_prefix):
                 if filepath in self._sql_hits:
                     return True   # SQL Hit: 直接通過
-                if self._sql_trusted and not model.isDir(idx):
+                if self._sql_trusted and not is_dir:
                     return False  # trusted 模式：確定是非命中的檔案，O(1) 拒絕
-                # 資料夾 或 非 trusted 模式: fallthrough 到原有字串比對
         # ─────────────────────────────────────────────────────────
 
         # 取檔名做忽略大小寫比對
@@ -204,19 +268,16 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
         name_lower = filename.lower()
         filter_lower = self._filter_text.lower()
 
-        is_match = False
-        if self._is_wildcard:
-            if fnmatch.fnmatch(name_lower, filter_lower):
-                is_match = True
-        else:
-            if filter_lower in name_lower:
-                is_match = True
+        is_match = (
+            fnmatch.fnmatch(name_lower, filter_lower)
+            if self._is_wildcard else filter_lower in name_lower
+        )
 
         if is_match:
             return True
 
         # 若檔名不符合，針對資料夾進行額外保護
-        if not model.isDir(idx):
+        if not is_dir:
             return False
 
         if self._current_root_path:
@@ -229,7 +290,6 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
 
             # 2. 保護子代資料夾 (確保搜尋時能保留下層目錄結構，以利主動向下展開尋找)
             if path.startswith(self._current_root_path):
-                # 針對未命中檔名的資料夾，主動往下尋找看內部是否有符合的項目
                 if self._has_matching_file(model.filePath(idx)):
                     return True
                 return False
@@ -484,6 +544,14 @@ class ExplorerPane(QWidget):
             "search")), QLineEdit.ActionPosition.LeadingPosition)
         self.search_edit.textChanged.connect(self.on_search_changed)
 
+        self.adv_search_btn = QToolButton()
+        self.adv_search_btn.setObjectName("advSearchBtn")
+        self.adv_search_btn.setToolTip(self.config_mgr.get_text("ui_pane_tooltip_adv_search", "進階尋找") if self.config_mgr else "進階尋找")
+        self.adv_search_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("filter")))
+        self.adv_search_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.adv_search_btn.setCheckable(True)
+        self.adv_search_btn.clicked.connect(self._toggle_filter_drawer)
+
         # 當使用者手動編輯網址列時，也同步清空搜尋列
         self.path_edit.textEdited.connect(self.search_edit.clear)
 
@@ -526,6 +594,7 @@ class ExplorerPane(QWidget):
         nav_layout.addWidget(self.custom_paths_btn)
         nav_layout.addWidget(self.path_edit)
         nav_layout.addWidget(self.search_edit)
+        nav_layout.addWidget(self.adv_search_btn)
         nav_layout.addWidget(self.list_view_btn)
         nav_layout.addWidget(self.grid_view_btn)
         nav_layout.addWidget(self.quality_toggle_btn)
@@ -533,6 +602,58 @@ class ExplorerPane(QWidget):
         nav_layout.addWidget(self.close_preview_btn)
 
         layout.addLayout(nav_layout)
+
+        # ── 過濾抽屜 (Filter Drawer) ─────────────────────────────
+        _SIZE_FILTERS = [("全部", 0), (">1 MB", 1 << 20), (">10 MB", 10 << 20), (">100 MB", 100 << 20)]
+        _DATE_FILTERS = [("全部", 0), ("今日", 1), ("本週", 7), ("本月", 30)]
+
+        self._filter_drawer = QFrame()
+        self._filter_drawer.setObjectName("filterDrawer")
+        self._filter_drawer.setVisible(False)
+        _dl = QVBoxLayout(self._filter_drawer)
+        _dl.setContentsMargins(6, 4, 6, 4)
+        _dl.setSpacing(4)
+
+        _size_row = QHBoxLayout()
+        _size_row.setSpacing(4)
+        _size_row.addWidget(QLabel("大小:"))
+        self._size_btns: list[QPushButton] = []
+        self._size_values = [v for _, v in _SIZE_FILTERS]
+        for label, val in _SIZE_FILTERS:
+            btn = QPushButton(label)
+            btn.setObjectName("filterChipBtn")
+            btn.setCheckable(True)
+            btn.setChecked(val == 0)
+            btn.clicked.connect(lambda _, v=val: self._on_size_filter(v))
+            self._size_btns.append(btn)
+            _size_row.addWidget(btn)
+        _size_row.addStretch()
+        _dl.addLayout(_size_row)
+
+        _date_row = QHBoxLayout()
+        _date_row.setSpacing(4)
+        _date_row.addWidget(QLabel("時間:"))
+        self._date_btns: list[QPushButton] = []
+        self._date_values = [v for _, v in _DATE_FILTERS]
+        for label, val in _DATE_FILTERS:
+            btn = QPushButton(label)
+            btn.setObjectName("filterChipBtn")
+            btn.setCheckable(True)
+            btn.setChecked(val == 0)
+            btn.clicked.connect(lambda _, v=val: self._on_date_filter(v))
+            self._date_btns.append(btn)
+            _date_row.addWidget(btn)
+        _date_row.addStretch()
+        _dl.addLayout(_date_row)
+
+        _deep_btn = QPushButton("深度搜尋 (索引 / 內容)…")
+        _deep_btn.setObjectName("deepSearchLink")
+        _deep_btn.setFlat(True)
+        _deep_btn.clicked.connect(self.open_advanced_search)
+        _dl.addWidget(_deep_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        layout.addWidget(self._filter_drawer)
+        # ────────────────────────────────────────────────────────
 
         self._search_status_label = QLabel("")
         self._search_status_label.setObjectName("searchStatusLabel")
@@ -860,17 +981,49 @@ class ExplorerPane(QWidget):
         except Exception:
             self._clear_sql_hits()
 
-    def _on_file_count_changed(self, count: int, is_scanning: bool) -> None:
-        """背景掃描計數更新 → 更新搜尋欄下方狀態標籤。"""
-        if not self.search_edit.text().strip():
+    def _count_proxy_files(self, parent=None) -> int:
+        """從 proxy model 直接數可見檔案數（主執行緒，同步）。"""
+        if parent is None:
+            src_root = self.model.index(self._current_path)
+            parent = self.proxy_model.mapFromSource(src_root)
+            if not parent.isValid():
+                return 0
+        count = 0
+        for row in range(self.proxy_model.rowCount(parent)):
+            child = self.proxy_model.index(row, 0, parent)
+            src = self.proxy_model.mapToSource(child)
+            if self.model.isDir(src):
+                count += self._count_proxy_files(child)
+            else:
+                count += 1
+            if count > 9999:  # 防爆保護
+                return count
+        return count
+
+    def _on_file_count_changed(self, is_scanning: bool) -> None:
+        """背景掃描狀態更新 → 更新搜尋欄下方狀態標籤（計數來自 proxy 行數）。"""
+        has_text = bool(self.search_edit.text().strip())
+        has_attr = (self.proxy_model._size_filter_bytes > 0
+                    or self.proxy_model._date_filter_days > 0)
+        if not has_text and not has_attr:
             self._search_status_label.setVisible(False)
             return
+        count = self._count_proxy_files()
+        count_str = f"{count}+" if count > 9999 else str(count)
         is_trusted = getattr(self.proxy_model, '_sql_trusted', False)
-        hint = "" if is_trusted else (self.config_mgr.get_text("ui_pane_search_no_index_hint", "⚠️ 未建立索引，建議先使用進階搜尋。") if self.config_mgr else "⚠️ 未建立索引，建議先使用進階搜尋。")
-        scanning = (self.config_mgr.get_text("ui_pane_search_scanning", "（掃描中...）") if self.config_mgr else "（掃描中...）") if is_scanning else ""
-        
-        full_tpl = self.config_mgr.get_text("ui_pane_search_status_full", "  {}找到 {} 個檔案{}") if self.config_mgr else "  {}找到 {} 個檔案{}"
-        self._search_status_label.setText(full_tpl.format(hint, count, scanning))
+        hint = "" if (is_trusted or not has_text) else (
+            self.config_mgr.get_text("ui_pane_search_no_index_hint", "⚠️ 未建立索引，建議先使用進階搜尋。")
+            if self.config_mgr else "⚠️ 未建立索引，建議先使用進階搜尋。"
+        )
+        scanning = (
+            self.config_mgr.get_text("ui_pane_search_scanning", "（掃描中...）")
+            if self.config_mgr else "（掃描中...）"
+        ) if is_scanning else ""
+        full_tpl = (
+            self.config_mgr.get_text("ui_pane_search_status_full", "  {}找到 {} 個檔案{}")
+            if self.config_mgr else "  {}找到 {} 個檔案{}"
+        )
+        self._search_status_label.setText(full_tpl.format(hint, count_str, scanning))
         self._search_status_label.setVisible(True)
 
     def _clear_sql_hits(self) -> None:
@@ -882,6 +1035,26 @@ class ExplorerPane(QWidget):
         """回傳當前實際的檔案視圖（tree 或 list_view），home_view 時退回 tree。"""
         w = self.view_stack.currentWidget()
         return self.list_view if w is self.list_view else self.tree
+
+    def _toggle_filter_drawer(self) -> None:
+        visible = not self._filter_drawer.isVisible()
+        self._filter_drawer.setVisible(visible)
+        self.adv_search_btn.setChecked(visible)
+        if not visible:
+            self._on_size_filter(0)
+            self._on_date_filter(0)
+
+    def _on_size_filter(self, val: int) -> None:
+        for btn, v in zip(self._size_btns, self._size_values):
+            btn.setChecked(v == val)
+        self.proxy_model.set_size_filter(val)
+        self.list_proxy.set_size_filter(val)
+
+    def _on_date_filter(self, val: int) -> None:
+        for btn, v in zip(self._date_btns, self._date_values):
+            btn.setChecked(v == val)
+        self.proxy_model.set_date_filter(val)
+        self.list_proxy.set_date_filter(val)
 
     def open_advanced_search(self):
         from ui.widgets.dialogs import SearchDialog
