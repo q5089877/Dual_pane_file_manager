@@ -56,7 +56,12 @@ class _PreviewPage(QWebEnginePage if _HAS_WEBENGINE else object):
             if path and os.path.isfile(path):
                 os.startfile(path)
             return False  # block navigation
-        
+
+        if url.scheme() == "app" and url.host() in ("pages-inc", "pages-dec"):
+            delta = +1 if url.host() == "pages-inc" else -1
+            self._panel._adjust_pdf_pages(delta)
+            return False
+
         # Intercept custom fspath: links (used by cloud placeholder download button)
         if url.scheme() == "fspath":
             path = self._panel._pending_path or self._panel._current_image_path
@@ -297,6 +302,18 @@ class PreviewPanel(QWidget):
             lambda action: self.action_requested.emit(
                 action, self._pending_path or self._current_image_path)
         )
+
+    def _adjust_pdf_pages(self, delta: int) -> None:
+        if not self.config_mgr:
+            return
+        cfg = self.config_mgr.load_config()
+        current = cfg.get("pdf_preview_max_pages", 3)
+        new_val = max(1, min(20, current + delta))
+        if new_val == current:
+            return
+        self.config_mgr.save_config(pdf_preview_max_pages=new_val)
+        if self._pending_path:
+            self._start_worker()
 
     @pyqtSlot()
     def _toggle_quality(self) -> None:

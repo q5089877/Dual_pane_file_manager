@@ -1346,19 +1346,6 @@ class AppSettingsDialog(QDialog):
     def _tab_preview(self, s: dict) -> QWidget:
         w, f = self._form_widget()
 
-        self._pdf_pages_spin = QSpinBox()
-        self._pdf_pages_spin.setRange(1, 20)
-        self._pdf_pages_spin.setValue(s.get("pdf_preview_max_pages", 3))
-        suffix_page = self.config_mgr.get_text("ui_dialog_settings_hour_suffix", " 頁") if self.config_mgr else " 頁" # reuse or dedicated key
-        # Wait, I used dedicated key in my list but let's be careful.
-        # Actually I listed hour_suffix as " 時". For pages I should probably use a generic or dedicated one.
-        # Let's use " 頁" literally or add to JSON. I already added it to my mental list.
-        # Checking JSON I wrote... ah I didn't add " 頁" specifically to JSON but I can use hardcoded default.
-        self._pdf_pages_spin.setSuffix(" 頁")
-        
-        label_pdf = self.config_mgr.get_text("ui_dialog_settings_label_pdf_pages", "PDF 預覽最大頁數：") if self.config_mgr else "PDF 預覽最大頁數："
-        f.addRow(label_pdf, self._pdf_pages_spin)
-
         self._preview_font_spin = QSpinBox()
         self._preview_font_spin.setRange(9, 24)
         self._preview_font_spin.setValue(s.get("preview_font_size", 13))
@@ -1487,7 +1474,6 @@ class AppSettingsDialog(QDialog):
             "search_limit":          self._limit_spin.value(),
             "nightly_scan_hour":     self._hour_spin.value(),
             "nightly_scan_minute":   self._min_spin.value(),
-            "pdf_preview_max_pages": self._pdf_pages_spin.value(),
             "preview_font_size":     self._preview_font_spin.value(),
             "confirm_before_delete": self._confirm_delete_chk.isChecked(),
             "image_prefix":          self._img_prefix_edit.text().strip(),
