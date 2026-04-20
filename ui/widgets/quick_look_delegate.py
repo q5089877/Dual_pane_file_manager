@@ -27,10 +27,16 @@ class QuickLookDelegate(QStyledItemDelegate):
             width, height
         )
 
+    def _get_path(self, index) -> str:
+        path = index.data(QFileSystemModel.Roles.FilePathRole) or ""
+        if not path:
+            path = index.data(Qt.ItemDataRole.UserRole) or ""
+        return path
+
     def paint(self, painter: QPainter, option, index):
         super().paint(painter, option, index)
 
-        path = index.data(QFileSystemModel.Roles.FilePathRole)
+        path = self._get_path(index)
         is_hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         is_active = (path == self.active_preview_path) and bool(path)
 
@@ -90,7 +96,7 @@ class QuickLookDelegate(QStyledItemDelegate):
 
     def editorEvent(self, event, model, option, index):
         if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
-            path = index.data(QFileSystemModel.Roles.FilePathRole)
+            path = self._get_path(index)
             if path and os.path.isfile(path):
                 rect = self._get_icon_rect(option.rect)
                 # Handle Qt5/Qt6 event coordinate differences robustly

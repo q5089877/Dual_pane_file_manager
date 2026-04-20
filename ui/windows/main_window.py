@@ -1105,8 +1105,13 @@ class MainWindow(QMainWindow):
         view = self._preview_source_view
         if view is None:
             return
-        source_idx = view.model().mapToSource(current)
-        path = self._preview_source_pane.model.filePath(source_idx)
+        pane = self._preview_source_pane
+        if view is pane.flat_view:
+            item = pane.flat_model.item(current.row(), 0)
+            path = (item.data(Qt.ItemDataRole.UserRole) if item else "") or ""
+        else:
+            source_idx = view.model().mapToSource(current)
+            path = pane.model.filePath(source_idx)
         if path and os.path.isfile(path) and self._preview_target_pane in self._preview_panels:
             self._preview_source_pane.set_previewing_path(path)
             self._preview_panels[self._preview_target_pane].preview_file(path)

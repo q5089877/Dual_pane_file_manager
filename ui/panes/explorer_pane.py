@@ -781,6 +781,13 @@ class ExplorerPane(QWidget):
         self.flat_view.doubleClicked.connect(self._on_flat_double_clicked)
         self.flat_view.header().setStretchLastSection(True)
         self.view_stack.addWidget(self.flat_view)
+        self.flat_view.selectionModel().selectionChanged.connect(self.update_status_info)
+        self.flat_view.installEventFilter(self)
+        self.flat_view.viewport().installEventFilter(self)
+        self.flat_view.setMouseTracking(True)
+        flat_delegate = QuickLookDelegate(self.config_mgr, self.flat_view)
+        flat_delegate.preview_requested.connect(self._flat_trigger_preview)
+        self.flat_view.setItemDelegateForColumn(0, flat_delegate)
         QTimer.singleShot(0, lambda: (
             self.flat_view.setColumnWidth(0, 280),
             self.flat_view.setColumnWidth(1, 90),
@@ -845,6 +852,7 @@ class ExplorerPane(QWidget):
         self.home_btn.setVisible(not active)
         self.custom_paths_btn.setVisible(not active)
         self.search_edit.setVisible(not active)
+        self.adv_search_btn.setVisible(not active)
         self.list_view_btn.setVisible(not active)
         self.grid_view_btn.setVisible(not active)
 
@@ -867,8 +875,18 @@ class ExplorerPane(QWidget):
         if hasattr(delegate_list, 'active_preview_path'):
             delegate_list.active_preview_path = path
 
+        flat_delegate = self.flat_view.itemDelegateForColumn(0)
+        if hasattr(flat_delegate, 'active_preview_path'):
+            flat_delegate.active_preview_path = path
+
         self.tree.viewport().update()
         self.list_view.viewport().update()
+        self.flat_view.viewport().update()
+
+    def _flat_trigger_preview(self, path: str) -> None:
+        win = self.window()
+        if hasattr(win, "toggle_inline_preview"):
+            win.toggle_inline_preview(path)
 
     def closeEvent(self, event):
         if self.usage_worker and self.usage_worker.isRunning():
@@ -1167,8 +1185,10 @@ class ExplorerPane(QWidget):
     # ─────────────────────────────────────────────────────────────
 
     def _file_view(self):
-        """回傳當前實際的檔案視圖（tree 或 list_view），home_view 時退回 tree。"""
+        """回傳當前實際的檔案視圖（tree、list_view 或 flat_view），home_view 時退回 tree。"""
         w = self.view_stack.currentWidget()
+        if w is self.flat_view:
+            return self.flat_view
         return self.list_view if w is self.list_view else self.tree
 
     def _toggle_filter_drawer(self) -> None:
@@ -1246,8 +1266,11 @@ class ExplorerPane(QWidget):
 
     def _trigger_disk_usage(self):
         view = self._file_view()
-        path = self.model.filePath(
-            view.model().mapToSource(view.rootIndex())) or "C:/"
+        if view is self.flat_view:
+            path = self._current_path or "C:/"
+        else:
+            path = self.model.filePath(
+                view.model().mapToSource(view.rootIndex())) or "C:/"
         if self.usage_worker and self.usage_worker.isRunning():
             self.usage_worker.terminate()
             self.usage_worker.wait()
@@ -1257,7 +1280,11 @@ class ExplorerPane(QWidget):
 
     def _on_disk_usage_finished(self, path, _total, _used, free):
         current_view = self._file_view()
-        if self.model.filePath(current_view.model().mapToSource(current_view.rootIndex())) == path:
+        if current_view is self.flat_view:
+            current_path = self._current_path or ""
+        else:
+            current_path = self.model.filePath(current_view.model().mapToSource(current_view.rootIndex()))
+        if current_path == path:
             free_gb = free / (1024 ** 3)
             total_gb = _total / (1024 ** 3)
             tpl = self.config_mgr.get_text("ui_pane_status_disk_usage", "{:.1f} GB 剩餘 / {:.1f} GB 總計") if self.config_mgr else "{:.1f} GB 剩餘 / {:.1f} GB 總計"
@@ -1306,6 +1333,16 @@ class ExplorerPane(QWidget):
 
     def _get_selected_paths(self):
         view = self._file_view()
+        if view is self.flat_view:
+            idxs = view.selectionModel().selectedRows()
+            paths = []
+            for i in idxs:
+                item = self.flat_model.item(i.row(), 0)
+                if item:
+                    p = item.data(Qt.ItemDataRole.UserRole)
+                    if p:
+                        paths.append(p)
+            return paths
         idxs = view.selectionModel().selectedIndexes()
         if not idxs:
             return []
@@ -1313,10 +1350,21 @@ class ExplorerPane(QWidget):
 
     def _get_selected_size(self):
         view = self._file_view()
+        if view is self.flat_view:
+            idxs = view.selectionModel().selectedRows()
+            total = 0
+            for i in idxs:
+                item = self.flat_model.item(i.row(), 0)
+                if item:
+                    p = item.data(Qt.ItemDataRole.UserRole)
+                    if p and os.path.isfile(p):
+                        total += os.path.getsize(p)
+            return total
         idxs = view.selectionModel().selectedRows()
         if not idxs:
             return 0
-        return sum(self.model.size(view.model().mapToSource(i)) for i in idxs if not self.model.isDir(view.model().mapToSource(i)))
+        return sum(self.model.size(view.model().mapToSource(i)) for i in idxs
+                   if not self.model.isDir(view.model().mapToSource(i)))
 
     def _get_selected_count(self):
         view = self._file_view()
@@ -1334,13 +1382,24 @@ class ExplorerPane(QWidget):
 
     def eventFilter(self, obj, event):
         if event.type() == event.Type.MouseButtonPress:
-            if obj in [self.tree, self.list_view,
-                       self.tree.viewport(), self.list_view.viewport()]:
+            if obj in [self.tree, self.list_view, self.flat_view,
+                       self.tree.viewport(), self.list_view.viewport(),
+                       self.flat_view.viewport()]:
                 self.focused.emit(self)
         if event.type() == event.Type.FocusIn:
-            if obj in [self.tree, self.list_view, self.path_edit, self.search_edit]:
+            if obj in [self.tree, self.list_view, self.flat_view,
+                       self.path_edit, self.search_edit]:
                 self.focused.emit(self)
         if event.type() == event.Type.KeyPress:
+            # flat_view Space → 觸發預覽
+            if obj in [self.flat_view, self.flat_view.viewport()]:
+                if event.key() == Qt.Key.Key_Space:
+                    paths = self._get_selected_paths()
+                    if len(paths) == 1 and os.path.isfile(paths[0]):
+                        win = self.window()
+                        if hasattr(win, "toggle_inline_preview"):
+                            win.toggle_inline_preview(paths[0])
+                    return True
             # 攔截 Ctrl+V
             if event.key() == Qt.Key.Key_V and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
                 # 只有在視圖區域 (tree 或 list_view) 按下時才觸發超級貼上
