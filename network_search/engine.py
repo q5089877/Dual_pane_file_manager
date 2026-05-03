@@ -1,7 +1,6 @@
 import os
 import sqlite3
 import logging
-import subprocess
 import time
 
 logger = logging.getLogger(__name__)
@@ -446,57 +445,6 @@ class IndexManager:
             try: return conn.execute("SELECT status, last_finished, total_files FROM scan_metadata WHERE root_path = ?", (root_path,)).fetchone()
             except: return None
 
-    def launch_cs_indexer(
-        self,
-        root: str,
-        db_path: str | None = None,
-        watch: bool = False,
-        notify_port: int = 13377,
-    ) -> "subprocess.Popen[str]":
-        """Launch DFE.Indexer.exe as a background process.
-
-        Args:
-            root:         Directory to scan (e.g. "K:\\").
-            db_path:      Path to the target SQLite DB.  Defaults to master.db.
-            watch:        If True, pass --watch to keep the process running with
-                          FileSystemWatcher after the initial scan.
-            notify_port:  UDP port to notify Python when the index changes.
-
-        Returns:
-            A Popen handle.  Read progress via readline() in a QThread worker.
-        """
-        import sys
-
-        if db_path is None:
-            db_path = str(self.master_db_path)
-
-        if getattr(sys, "frozen", False):
-            base = sys._MEIPASS  # type: ignore[attr-defined]
-        else:
-            base = str(Path(__file__).parent.parent)
-
-        exe = Path(base) / "cs_indexer" / "bin" / "Release" / "net8.0" / "win-x64" / "publish" / "DFE.Indexer.exe"
-        if not exe.exists():
-            # fallback: dev build
-            exe = Path(base) / "cs_indexer" / "DFE.Indexer.exe"
-
-        creation_flags = 0
-        if sys.platform == "win32":
-            creation_flags = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
-
-        cmd = [str(exe), "--db", db_path, "--root", root]
-        if watch:
-            cmd += ["--watch", "--notify-port", str(notify_port)]
-
-        return subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE,   # needed so C# can detect parent exit via stdin close
-            text=True,
-            encoding="utf-8",
-            creationflags=creation_flags,
-        )
 
 # ==========================================
 # MVP: Contract (介面隔離)
