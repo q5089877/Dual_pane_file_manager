@@ -112,8 +112,9 @@ class TestConfigManagerDataLayer:
         result = cfg.save_app_settings(new_settings)
         assert result is True
 
-        # 重新載入並驗證
-        config = cfg.load_config()
+        # 重新載入並驗證（mock exists 避免 auto_discover 覆蓋測試路徑）
+        with patch("os.path.exists", return_value=True):
+            config = cfg.load_config()
         assert config["restore_last_session"] is False
         assert config["remote_index_root"] == "Z:\\Test\\Path"
         assert config["search_limit"] == 5000
@@ -322,7 +323,7 @@ class TestAutoDiscoverRemoteRoot:
     def test_returns_first_match(self, cfg):
         """TC-26: 優先回傳第一個匹配的磁碟 (K 優先)。"""
         suffix = r"network_share\search_index"
-        cfg.config["remote_index_suffix"] = suffix
+        cfg.config = {"remote_index_suffix": suffix}
         expected = os.path.join("K:\\", suffix)
 
         def mock_exists(path):
@@ -335,7 +336,7 @@ class TestAutoDiscoverRemoteRoot:
     def test_fallback_to_other_drives(self, cfg):
         """TC-27: K 不存在時 Fallback 到 H。"""
         suffix = r"network_share\search_index"
-        cfg.config["remote_index_suffix"] = suffix
+        cfg.config = {"remote_index_suffix": suffix}
         h_path = os.path.join("H:\\", suffix)
 
         def mock_exists(path):
@@ -389,7 +390,8 @@ class TestEdgeCases:
             "remote_index_root": "K:\\公司\\部門\\索引庫",
             "monitored_paths": ["D:/專案/測試用"],
         })
-        config = cfg.load_config()
+        with patch("os.path.exists", return_value=True):
+            config = cfg.load_config()
         assert config["remote_index_root"] == "K:\\公司\\部門\\索引庫"
         assert "D:/專案/測試用" in config["monitored_paths"]
 
