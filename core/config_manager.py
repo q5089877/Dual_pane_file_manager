@@ -280,6 +280,12 @@ class ConfigManager:
         },
     }
 
+    def get_theme_names(self) -> list[str]:
+        return list(self._THEME_PRESETS.keys())
+
+    def get_master_password(self) -> str:
+        return self.load_config().get("master_node_password", "1235")
+
     def apply_theme_preset(self, theme_name: str) -> bool:
         """將指定的內建主題寫入 theme.json。找不到對應 preset 時靜默忽略。"""
         preset = self._THEME_PRESETS.get(theme_name)

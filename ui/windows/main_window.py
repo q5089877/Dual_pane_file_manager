@@ -636,8 +636,7 @@ class MainWindow(QMainWindow):
         self.path_popup.show()
 
     def on_settings_clicked(self) -> None:
-        from PyQt6.QtWidgets import QDialog
-        from ui.widgets.dialogs import AppSettingsDialog
+        from ui.widgets.app_settings_dialog import AppSettingsDialog
         dlg = AppSettingsDialog(self.config_mgr, self)
         dlg.theme_changed.connect(self._reload_stylesheet)
         result = dlg.exec()

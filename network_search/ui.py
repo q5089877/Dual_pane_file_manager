@@ -236,7 +236,8 @@ class SettingsDialog(QDialog):
                 QLineEdit.EchoMode.Password
             )
             
-            if ok and text == "1235":
+            expected = self.config_mgr.get_master_password() if self.config_mgr else self.config.get("master_node_password", "1235")
+            if ok and text == expected:
                 self.master_group.setVisible(True)
             else:
                 if ok:
