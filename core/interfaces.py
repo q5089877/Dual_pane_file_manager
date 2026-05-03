@@ -100,39 +100,6 @@ class ISearchView(ABC):
 
 
 # ==========================================
-# MVP Contract: DropZone (暫存區合約)
-# ==========================================
-class IDropZoneView(ABC):
-    """View 抽象合約：暫存區的顯示與狀態更新"""
-    @abstractmethod
-    def refresh_items(self, items: list) -> None: ...
-
-    @abstractmethod
-    def set_buttons_enabled(self, enabled: bool) -> None: ...
-
-    @abstractmethod
-    def set_badge(self, count: int) -> None: ...
-
-    @abstractmethod
-    def show_status_msg(self, text: str, style: str) -> None: ...
-
-    @abstractmethod
-    def copy_paths_to_clipboard(self, paths: list) -> None: ...
-
-    @abstractmethod
-    def remove_item_widget(self, item_id: int) -> None: ...
-
-    @abstractmethod
-    def set_size_indicator(self, total_bytes: int) -> None: ...
-
-    @abstractmethod
-    def set_pack_state(self, state: str) -> None: ...
-
-    @abstractmethod
-    def set_temp_zip_path(self, path: str | None) -> None: ...
-
-
-# ==========================================
 # MVP Contract: MainWindow (主視窗合約)
 # ==========================================
 class IMainWindowView(ABC):
