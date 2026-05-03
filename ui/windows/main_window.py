@@ -62,14 +62,10 @@ class _TrashDropButton(QToolButton):
         if not paths:
             return
 
-        import send2trash
-        done, errors = [], []
-        for p in paths:
-            try:
-                send2trash.send2trash(os.path.normpath(p))
-                done.append(p)
-            except Exception as e:
-                errors.append(str(e))
+        from core.file_ops import FileOps
+        results = FileOps.delete_paths(paths)
+        done   = [p for p, ok, _ in results if ok]
+        errors = [e for _, ok, e in results if not ok]
 
         win = self.window()
         if done:

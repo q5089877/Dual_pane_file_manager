@@ -145,11 +145,8 @@ class FileOperationThread(QThread):
                 raise OSError(f"不支援的壓縮格式: {os.path.basename(archive_path)}")
 
             # 過河拆橋 (Trash after success)
-            try:
-                import send2trash as _s2t
-                _s2t.send2trash(os.path.normpath(archive_path))
-            except Exception:
-                pass
+            from core.file_ops import FileOps
+            FileOps.delete_paths([archive_path])
         except Exception as e:
             raise e
 
@@ -223,15 +220,8 @@ class FileOperationThread(QThread):
                         raise OSError(f"校驗失敗，來源已保留: {fname}")
 
         # Checksums match — send source to recycle bin
-        try:
-            import send2trash as _s2t
-            _s2t.send2trash(os.path.normpath(src))
-        except Exception:
-            # Fallback: permanent delete if send2trash unavailable
-            if os.path.isfile(src):
-                os.remove(src)
-            else:
-                shutil.rmtree(src)
+        from core.file_ops import FileOps
+        FileOps.delete_paths([src])
 
     # ------------------------------------------------------------------
 
