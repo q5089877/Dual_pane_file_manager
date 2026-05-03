@@ -158,25 +158,6 @@ class IMainWindowView(ABC):
         """Aborts a specific background scanner."""
         pass
 
-# ==========================================
-# MVP Contract: Compare (資料夾比較合約)
-# ==========================================
-class ICompareView(ABC):
-    @abstractmethod
-    def show_progress(self, message: str) -> None:
-        pass
-
-    @abstractmethod
-    def show_differences(self, differences: list, total_count: int) -> None:
-        pass
-
-    @abstractmethod
-    def show_sync_result(self, success: int, errors: int) -> None:
-        pass
-
-    @abstractmethod
-    def ask_confirmation(self, title: str, message: str) -> bool:
-        pass
 
 # ==========================================
 # MVP Contract: AI Exporter (AI 匯出合約)

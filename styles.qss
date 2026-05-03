@@ -859,22 +859,7 @@ QLabel#searchStatusLabel {
     padding: 1px 6px 2px 6px;
 }
 
-/* Splitter bridge button — 視覺優化：Hover 選中採用內斂深藍色 */
-QPushButton#splitterBridgeBtn {
-    border-radius: 14px;
-    background-color: {{headerBg}};
-    color: #ffffff;
-    border: 1px solid {{border}};
-    padding: 4px;
-    image: url("ui/compare.svg");
-}
-QPushButton#splitterBridgeBtn:hover {
-    background-color: {{accentSubtle}};
-    border-color: {{accentBorder}};
-}
-QPushButton#splitterBridgeBtn:pressed {
-    background-color: {{border}};
-}
+
 QSplitter#mainSplitter::handle {
     background: transparent;
 }

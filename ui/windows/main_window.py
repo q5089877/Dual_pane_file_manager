@@ -1,6 +1,6 @@
 import os, re
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout,
+    QMainWindow, QWidget, QVBoxLayout, QSplitter,
     QMessageBox, QTabBar, QFileDialog, QMenu, QLabel, QDialog,
     QGraphicsOpacityEffect, QToolButton
 )
@@ -10,7 +10,6 @@ from PyQt6.QtGui import QAction, QShortcut, QKeySequence, QIcon
 from ui.widgets.tabs import CustomTabWidget
 from ui.widgets.popups import PathPopup, PinPopup
 from ui.widgets.buttons import PinDropButton
-from ui.widgets.compare_dialog import CompareDialog
 from ui.panes.explorer_pane import ExplorerPane
 from core.config_manager import ConfigManager
 from core.interfaces import IMainWindowView
@@ -227,12 +226,10 @@ class MainWindow(QMainWindow):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
 
-        from ui.widgets.splitter_bridge import BridgeSplitter
-        self.splitter = BridgeSplitter(Qt.Orientation.Horizontal)
-        self.splitter.setHandleWidth(32)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setHandleWidth(8)
         self.splitter.setObjectName("mainSplitter")
         self.splitter.splitterMoved.connect(lambda: self.save_config())
-        self.splitter.bridge_clicked.connect(self.on_compare_clicked)
 
         self.left_tabs = CustomTabWidget()
         self.right_tabs = CustomTabWidget()
@@ -637,18 +634,6 @@ class MainWindow(QMainWindow):
         ss = self.config_mgr.load_stylesheet("styles.qss", "theme.json")
         QApplication.instance().setStyleSheet(ss)
         self.update()
-
-    def on_compare_clicked(self):
-        lp = self.left_tabs.currentWidget()
-        rp = self.right_tabs.currentWidget()
-        if not lp or not rp:
-            return
-        l_path = lp.model.filePath(lp.proxy_model.mapToSource(lp.tree.rootIndex()))
-        r_path = rp.model.filePath(rp.proxy_model.mapToSource(rp.tree.rootIndex()))
-        if os.path.isdir(l_path) and os.path.isdir(r_path):
-            CompareDialog(l_path, r_path, self).show()
-        else:
-            QMessageBox.warning(self, self.config_mgr.get_text("ui_main_warn_title", "警告"), self.config_mgr.get_text("ui_main_warn_both_panes_required", "兩側皆需開啟資料夾"))
 
     def on_advanced_search_clicked(self):
         if self.active_pane:
