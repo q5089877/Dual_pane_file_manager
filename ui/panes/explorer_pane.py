@@ -172,6 +172,8 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
     """Custom proxy to ensure current root and ancestors are never filtered out."""
     file_count_changed = pyqtSignal(bool)        # is_scanning
 
+    _MAX_SCAN_WORKERS = 6  # cap concurrent _DirScanWorker threads to avoid UI freeze
+
     def __init__(self, config_mgr=None, parent=None):
         self.config_mgr = config_mgr
         super().__init__(parent)
@@ -186,6 +188,8 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
         self._max_scan_depth: int = 0            # 0 = 無限制；>0 = 限制 QDirIterator 深度
         self._scanning_dirs: set[str] = set()   # 正在背景掃描中的目錄路徑
         self._scan_workers: dict[str, _DirScanWorker] = {}  # 路徑 → Worker
+        self._scan_queue: list[str] = []         # pending dirs waiting for a free worker slot
+        self._active_scan_count: int = 0         # number of currently running workers
         self._size_filter_bytes: int = 0        # 0 = 不過濾；>0 = 最小位元組數
         self._date_filter_days: int = 0         # 0 = 不過濾；1 = 今日；7 = 本週；30 = 本月
 
@@ -233,21 +237,26 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
             w.finished.connect(w.deleteLater)
         self._scan_workers.clear()
         self._scanning_dirs.clear()
+        self._scan_queue.clear()
+        self._active_scan_count = 0
 
     def _on_scan_result(self, dir_path: str, matched_count: int) -> None:
         """Worker 掃描完成回呼：更新快取、累計計數、條件式重繪。"""
         self._scanning_dirs.discard(dir_path)
         self._scan_workers.pop(dir_path, None)
+        self._active_scan_count -= 1
         has_match = matched_count > 0
         cache_key = (f"{dir_path}::{self._filter_text}::{self._is_wildcard}"
                      f"::{self._max_scan_depth}::{self._size_filter_bytes}::{self._date_filter_days}")
         self._count_cache[cache_key] = has_match
-        is_scanning = len(self._scanning_dirs) > 0
+        is_scanning = len(self._scanning_dirs) > 0 or bool(self._scan_queue)
         self.file_count_changed.emit(is_scanning)
         # 條件式重繪：只有「樂觀放行」翻盤成「確定無匹配」時才觸發重繪
         # has_match=True 時，資料夾本就顯示中，無需重繪避免閃爍
         if not has_match:
             self.invalidateFilter()
+        # Drain the queue: start next pending worker if a slot is now free
+        self._drain_scan_queue()
 
     def set_sql_hits(self, hits: set[str], covered_prefix: str, trusted: bool = False, max_depth: int = 0) -> None:
         self._sql_hits = hits
@@ -259,6 +268,21 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
         self._count_cache.clear()
         self.invalidateFilter()
 
+    def _drain_scan_queue(self) -> None:
+        """Start queued _DirScanWorkers up to _MAX_SCAN_WORKERS at a time."""
+        while self._scan_queue and self._active_scan_count < self._MAX_SCAN_WORKERS:
+            dir_path = self._scan_queue.pop(0)
+            if dir_path not in self._scanning_dirs:
+                continue  # was cancelled/cleared while waiting
+            self._active_scan_count += 1
+            w = _DirScanWorker(dir_path, self._filter_text, self._is_wildcard,
+                               self._max_scan_depth, self._size_filter_bytes,
+                               self._date_filter_days, parent=self)
+            w.result_ready.connect(self._on_scan_result)
+            w.finished.connect(w.deleteLater)
+            self._scan_workers[dir_path] = w
+            w.start()
+
     def _has_matching_file(self, dir_path: str) -> bool:
         """非同步版：先樂觀放行，背景 Worker 掃完後再 invalidateFilter 修正。"""
         cache_key = (f"{dir_path}::{self._filter_text}::{self._is_wildcard}"
@@ -266,18 +290,13 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
         # 1. 快取命中 → O(1) 直接回傳
         if cache_key in self._count_cache:
             return self._count_cache[cache_key]
-        # 2. 正在掃描中 → 樂觀放行（保持資料夾可見）
+        # 2. 正在掃描中或已排隊 → 樂觀放行（保持資料夾可見）
         if dir_path in self._scanning_dirs:
             return True
-        # 3. 啟動背景 Worker，樂觀放行等待結果
+        # 3. 排入 queue，受 _MAX_SCAN_WORKERS 限制後再啟動
         self._scanning_dirs.add(dir_path)
-        w = _DirScanWorker(dir_path, self._filter_text, self._is_wildcard,
-                           self._max_scan_depth, self._size_filter_bytes,
-                           self._date_filter_days, parent=self)
-        w.result_ready.connect(self._on_scan_result)
-        w.finished.connect(w.deleteLater)
-        self._scan_workers[dir_path] = w
-        w.start()
+        self._scan_queue.append(dir_path)
+        self._drain_scan_queue()
         return True  # 樂觀放行，掃完後觸發 invalidateFilter 修正
 
     def filterAcceptsRow(self, source_row, source_parent):
@@ -989,9 +1008,10 @@ class ExplorerPane(QWidget):
 
             # 根據是否有搜尋條件決定展開或收合樹狀結構
             if text:
-                # SQL trusted 模式：filter 已透過祖先路徑處理可見性，跳過 expandAll 避免主執行緒阻塞
+                # SQL trusted 模式：filter 已透過祖先路徑處理可見性，跳過展開避免主執行緒阻塞
+                # 非 trusted 模式：只展開前 2 層，避免 node_modules 等深層目錄一次 spawn 大量 Worker
                 if not self.proxy_model._sql_trusted:
-                    self.tree.expandAll()
+                    self.tree.expandToDepth(1)
                 self._was_searching = True
             elif getattr(self, '_was_searching', False):
                 self.tree.collapseAll()
@@ -1222,20 +1242,31 @@ class ExplorerPane(QWidget):
         SearchDialog(self.model.rootPath(),
                      self.config_mgr, self).showMaximized()
 
+    def _is_search_active(self) -> bool:
+        """判斷目前是否處於搜尋狀態 (包含關鍵字或進階篩選)。"""
+        return bool(
+            self.search_edit.text()
+            or getattr(self, '_current_size_filter', None)
+            or getattr(self, '_current_date_filter', None)
+        )
+
     def set_view_mode(self, mode):
+        # 1. 永遠記錄使用者的視圖偏好
         self._current_mode = mode
 
-        if mode == "details":
-            self.view_stack.setCurrentWidget(self.tree)
-            self.tree.header().setVisible(True)
-            for i in range(1, self.model.columnCount()):
-                self.tree.setColumnHidden(i, False)
-            self.tree.setColumnHidden(2, True)  # Type 欄永遠隱藏
-        else:  # icons
-            self.list_view.set_display_mode("icons")
-            self.view_stack.setCurrentWidget(self.list_view)
+        # 2. 只有在「非搜尋狀態」下，才實際切換底層的視圖元件
+        if not self._is_search_active():
+            if mode == "details":
+                self.view_stack.setCurrentWidget(self.tree)
+                self.tree.header().setVisible(True)
+                for i in range(1, self.model.columnCount()):
+                    self.tree.setColumnHidden(i, False)
+                self.tree.setColumnHidden(2, True)  # Type 欄永遠隱藏
+            else:  # icons
+                self.list_view.set_display_mode("icons")
+                self.view_stack.setCurrentWidget(self.list_view)
 
-        # 高亮 active 視圖按鈕
+        # 3. 永遠更新 UI 按鈕的視覺高亮狀態 (即使在搜尋中也要給予回饋)
         self.list_view_btn.setProperty("active", mode == "details")
         self.grid_view_btn.setProperty("active", mode == "icons")
         self.list_view_btn.style().unpolish(self.list_view_btn)

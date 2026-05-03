@@ -349,10 +349,14 @@ class _ThumbnailWorker(QThread):
 
 
 
+MAX_CONCURRENT_WORKERS = 4
+
+
 class ThumbnailManager(QObject):
     """
     Central manager that spawns worker threads for thumbnail generation.
-    Maintains an in-memory cache.
+    Maintains an in-memory cache. Limits concurrent workers to MAX_CONCURRENT_WORKERS
+    to prevent UI freeze when many items are rendered at once (e.g. 36-item icon view).
     """
     thumbnail_ready = pyqtSignal(str, QPixmap)
 
@@ -360,12 +364,14 @@ class ThumbnailManager(QObject):
         super().__init__(parent)
         self._cache: dict[str, QPixmap] = {}
         self._in_progress: set[str] = set()
+        self._queue: list[tuple[str, int]] = []  # (path, size) pending requests
+        self._active_workers: int = 0
         self._icon_provider = QFileIconProvider()
 
     def get_thumbnail(self, path: str, size: int = THUMB_SIZE) -> QPixmap | None:
         """
         Returns cached pixmap immediately if available.
-        If not, spawns a background worker and returns None (caller should
+        If not, queues a background worker and returns None (caller should
         connect to thumbnail_ready to refresh the view once it arrives).
         """
         if path in self._cache:
@@ -373,21 +379,32 @@ class ThumbnailManager(QObject):
 
         ext = os.path.splitext(path)[1].lower()
         if ext not in IMAGE_EXTS and ext != PDF_EXT and ext not in OFFICE_EXTS:
-            # Not a previewable type — return None, let delegate use system icon
             return None
 
         if path not in self._in_progress:
             self._in_progress.add(path)
-            worker = _ThumbnailWorker(path, size, self)
-            worker.thumbnail_ready.connect(self._on_thumbnail_ready)
-            worker.finished.connect(lambda p=path: self._in_progress.discard(p))
-            worker.start()
+            self._queue.append((path, size))
+            self._drain_queue()
 
         return None  # will call back via thumbnail_ready signal
 
+    def _drain_queue(self):
+        """Start workers up to MAX_CONCURRENT_WORKERS from the pending queue."""
+        while self._queue and self._active_workers < MAX_CONCURRENT_WORKERS:
+            path, size = self._queue.pop(0)
+            self._active_workers += 1
+            worker = _ThumbnailWorker(path, size, self)
+            worker.thumbnail_ready.connect(self._on_thumbnail_ready)
+            worker.finished.connect(lambda p=path: self._on_worker_finished(p))
+            worker.start()
+
+    def _on_worker_finished(self, path: str):
+        self._active_workers -= 1
+        self._in_progress.discard(path)
+        self._drain_queue()
+
     def _on_thumbnail_ready(self, path: str, pixmap: QPixmap):
         self._cache[path] = pixmap
-        self._in_progress.discard(path)
         self.thumbnail_ready.emit(path, pixmap)
 
     def invalidate(self, path: str):
@@ -395,3 +412,5 @@ class ThumbnailManager(QObject):
 
     def clear(self):
         self._cache.clear()
+        self._queue.clear()
+        self._in_progress.clear()

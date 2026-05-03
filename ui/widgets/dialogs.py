@@ -1,16 +1,15 @@
 import os, datetime, re
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
-    QLabel, QGroupBox, QMessageBox, QListWidget, QInputDialog,
-    QTableWidget, QTableWidgetItem, QHeaderView, QGridLayout, QCheckBox,
+    QLabel, QMessageBox, QListWidget, QInputDialog,
+    QHeaderView, QCheckBox,
     QMenu, QToolButton, QTreeView, QProgressBar, QStatusBar, QFileIconProvider, QComboBox,
-    QTabWidget, QWidget, QFormLayout, QSpinBox, QFileDialog,
+    QTabWidget, QWidget, QFormLayout, QSpinBox, QFileDialog, QProgressDialog,
 )
 from PyQt6.QtCore import Qt, QTimer, QFileInfo, QSortFilterProxyModel, pyqtSignal, QThread
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QColor
 from ui.presenters.search_presenter import SearchPresenter
-from core.interfaces import ISearchView
-from core.config_manager import ConfigManager
+from core.interfaces import ISearchView, IAIExporterView
 
 
 class DateSortProxyModel(QSortFilterProxyModel):
@@ -815,192 +814,6 @@ class AIExporterProgressDialog(QProgressDialog):
                 self.dlg.canceled.connect(callback)
                 
         return _AIExporterViewAdapter(self)
-
-    def _init_ui(self):
-        # NOTE: This method appears to be orphaned/incorrectly placed code from CompareDialog
-        # but we translate its strings anyway as requested.
-        layout = QVBoxLayout(self)
-        
-        range_title = self.config_mgr.get_text("ui_dialog_compare_range", "比較範圍") if self.config_mgr else "比較範圍"
-        path_box = QGroupBox(range_title)
-        path_layout = QGridLayout(path_box)
-        
-        label_left = self.config_mgr.get_text("ui_dialog_compare_left_path", "左側路徑:") if self.config_mgr else "左側路徑:"
-        label_right = self.config_mgr.get_text("ui_dialog_compare_right_path", "右側路徑:") if self.config_mgr else "右側路徑:"
-        
-        path_layout.addWidget(QLabel(label_left), 0, 0); path_layout.addWidget(QLineEdit(self.left_path, readOnly=True), 0, 1)
-        path_layout.addWidget(QLabel(label_right), 1, 0); path_layout.addWidget(QLineEdit(self.right_path, readOnly=True), 1, 1)
-        layout.addWidget(path_box)
-        
-        status_ready = self.config_mgr.get_text("ui_dialog_compare_status_ready", "準備就緒") if self.config_mgr else "準備就緒"
-        self.status_label = QLabel(status_ready); layout.addWidget(self.status_label)
-        
-        self.table = QTableWidget(0, 5)
-        col_sync = self.config_mgr.get_text("ui_dialog_compare_col_sync", "同步") if self.config_mgr else "同步"
-        col_rel = self.config_mgr.get_text("ui_dialog_compare_col_rel_path", "相對路徑") if self.config_mgr else "相對路徑"
-        col_type = self.config_mgr.get_text("ui_dialog_compare_col_type", "類型") if self.config_mgr else "類型"
-        col_status = self.config_mgr.get_text("ui_dialog_compare_col_status", "狀態") if self.config_mgr else "狀態"
-        col_advice = self.config_mgr.get_text("ui_dialog_compare_col_advice", "建議操作") if self.config_mgr else "建議操作"
-        self.table.setHorizontalHeaderLabels([col_sync, col_rel, col_type, col_status, col_advice])
-        self.table.setColumnWidth(0, 40)
-        self.table.setColumnWidth(2, 60)
-        self.table.horizontalHeader().setStretchLastSection(True)
-        # 新增交互：表頭全選與整列點擊
-        self.table.horizontalHeader().sectionClicked.connect(self.on_header_clicked)
-        self.table.clicked.connect(self.on_table_clicked)
-        layout.addWidget(self.table)
-
-        # 空狀態提示 (Zero State Overlay)
-        empty_text = self.config_mgr.get_text("ui_dialog_compare_empty", "✅\n🎉 兩個資料夾已完全同步，無需任何操作") if self.config_mgr else "✅\n🎉 兩個資料夾已完全同步，無需任何操作"
-        self.empty_state_label = QLabel(empty_text)
-        self.empty_state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        _empty_qss = "font-size: 16px; color: {{success}}; font-weight: bold; margin: 60px; line-height: 1.5;"
-        self.empty_state_label.setStyleSheet(ConfigManager().apply_theme_to_text(_empty_qss))
-        self.empty_state_label.setVisible(False)
-        layout.addWidget(self.empty_state_label)
-
-        btn_layout = QHBoxLayout()
-        btn_scan_text = self.config_mgr.get_text("ui_dialog_compare_btn_scan", "開始完整掃描") if self.config_mgr else "開始完整掃描"
-        self.scan_btn = QPushButton(btn_scan_text); self.scan_btn.clicked.connect(self.start_scan)
-        
-        btn_mirror_text = self.config_mgr.get_text("ui_dialog_compare_btn_mirror", "完全鏡像 (左側為準)") if self.config_mgr else "完全鏡像 (左側為準)"
-        self.mirror_btn = QPushButton(btn_mirror_text); self.mirror_btn.clicked.connect(lambda: self.run_sync("L2R_MIRROR"))
-        
-        btn_upd_l2r_text = self.config_mgr.get_text("ui_dialog_compare_btn_update_l2r", "單向更新 (左 -> 右)") if self.config_mgr else "單向更新 (左 -> 右)"
-        self.upd_l2r = QPushButton(btn_upd_l2r_text)
-        _l2r_qss = """
-            QPushButton { background-color: {{activeTab}}; color: {{text}}; font-weight: bold; border-radius: 4px; padding: 6px 12px; }
-            QPushButton:hover { background-color: {{accent}}; }
-            QPushButton:disabled { background-color: {{headerBg}}; color: {{textMuted}}; }
-        """
-        self.upd_l2r.setStyleSheet(ConfigManager().apply_theme_to_text(_l2r_qss))
-        self.upd_l2r.clicked.connect(lambda: self.run_sync("L2R_UPDATE"))
-        
-        btn_upd_r2l_text = self.config_mgr.get_text("ui_dialog_compare_btn_update_r2l", "反向更新 (右 -> 左)") if self.config_mgr else "反向更新 (右 -> 左)"
-        self.upd_r2l = QPushButton(btn_upd_r2l_text); self.upd_r2l.clicked.connect(lambda: self.run_sync("R2L_UPDATE"))
-        
-        self.set_sync_buttons_enabled(False)
-        btn_layout.addWidget(self.scan_btn); btn_layout.addStretch()
-        btn_layout.addWidget(self.mirror_btn); btn_layout.addWidget(self.upd_l2r); btn_layout.addWidget(self.upd_r2l)
-        layout.addLayout(btn_layout)
-
-    def set_sync_buttons_enabled(self, enabled):
-        self.mirror_btn.setEnabled(enabled); self.upd_l2r.setEnabled(enabled); self.upd_r2l.setEnabled(enabled)
-
-    def start_scan(self):
-        self.table.setRowCount(0); self.differences = []; self.set_sync_buttons_enabled(False); self.scan_btn.setEnabled(False)
-        self.empty_state_label.setVisible(False) # Hide empty state during scan
-        self.presenter.start_compare()
-
-    # ICompareView implementations
-    def show_progress(self, message: str) -> None:
-        self.status_label.setText(message)
-
-    def show_differences(self, differences: list, total_count: int) -> None:
-        self.scan_btn.setEnabled(True)
-        self.differences = differences
-        self.table.setRowCount(0)
-        
-        has_diff = len(self.differences) > 0
-        self.table.setVisible(has_diff)
-        self.empty_state_label.setVisible(not has_diff)
-        self.set_sync_buttons_enabled(has_diff)
-
-        if not has_diff:
-            msg = self.config_mgr.get_text("ui_dialog_compare_status_finished", "掃描完畢。比對了 {} 個項目，發現 {} 個差異。").format(total_count, 0) if self.config_mgr else f"掃描完畢。比對了 {total_count} 個項目，發現 0 個差異。"
-            self.status_label.setText(msg)
-            return
-
-        msg = self.config_mgr.get_text("ui_dialog_compare_status_finished", "掃描完畢。比對了 {} 個項目，發現 {} 個差異。").format(total_count, len(self.differences)) if self.config_mgr else f"掃描完畢。比對了 {total_count} 個項目，發現 {len(self.differences)} 個差異。"
-        self.status_label.setText(msg)
-        for d in self.differences:
-            row = self.table.rowCount(); self.table.insertRow(row)
-            
-            # 1. 同步 Checkbox
-            chk_item = QTableWidgetItem()
-            chk_item.setCheckState(Qt.CheckState.Checked)
-            self.table.setItem(row, 0, chk_item)
-            
-            # 2. 相對路徑 (加 Tooltip)
-            path_item = QTableWidgetItem(d['rel_path'])
-            path_item.setToolTip(d['rel_path'])
-            self.table.setItem(row, 1, path_item)
-            
-            # 3. 類型
-            self.table.setItem(row, 2, QTableWidgetItem("📁" if d['is_dir'] else "📄"))
-            
-            # 4. 狀態與建議操作 (含顏色與圖示)
-            status, advice, color = self._get_status_view_data(d)
-            
-            status_item = QTableWidgetItem(status)
-            status_item.setForeground(color)
-            self.table.setItem(row, 3, status_item)
-
-            advice_item = QTableWidgetItem(advice)
-            advice_item.setForeground(color)
-            self.table.setItem(row, 4, advice_item)
-            
-        self.set_sync_buttons_enabled(True)
-
-    def on_header_clicked(self, index):
-        """點擊表頭一鍵切換全選"""
-        if index == 0 and self.table.rowCount() > 0:
-            first_state = self.table.item(0, 0).checkState()
-            new_state = Qt.CheckState.Unchecked if first_state == Qt.CheckState.Checked else Qt.CheckState.Checked
-            for i in range(self.table.rowCount()):
-                self.table.item(i, 0).setCheckState(new_state)
-
-    def on_table_clicked(self, index):
-        """點擊整列切換勾選"""
-        if index.column() != 0: # 排除直接點 Checkbox
-            item = self.table.item(index.row(), 0)
-            item.setCheckState(Qt.CheckState.Unchecked if item.checkState() == Qt.CheckState.Checked else Qt.CheckState.Checked)
-
-    def _get_status_view_data(self, d):
-        _tc = ConfigManager().get_theme_colors()
-        _success = QColor(_tc.get("success", "#57B77F"))
-        _danger  = QColor(_tc.get("danger",  "#C9605A"))
-        _accent  = QColor(_tc.get("accent",  "#58A6FF"))
-        if d['status'] == 'L_ONLY':
-            status = self.config_mgr.get_text("ui_dialog_compare_status_l_only", "僅左側有") if self.config_mgr else "僅左側有"
-            advice = self.config_mgr.get_text("ui_dialog_compare_status_l_only_advice", "[+] 複製到右側") if self.config_mgr else "[+] 複製到右側"
-            return status, advice, _success
-        if d['status'] == 'R_ONLY':
-            status = self.config_mgr.get_text("ui_dialog_compare_status_r_only", "右側多出") if self.config_mgr else "右側多出"
-            advice = self.config_mgr.get_text("ui_dialog_compare_status_r_only_advice", "[✖] 移至安全暫存區") if self.config_mgr else "[✖] 移至安全暫存區"
-            return status, advice, _danger
-        if d['status'] == 'DIFF':
-            status_base = self.config_mgr.get_text("ui_dialog_compare_status_diff", "內容不同") if self.config_mgr else "內容不同"
-            suffix_l = self.config_mgr.get_text("ui_dialog_compare_status_diff_l_newer", " (左偏新)") if self.config_mgr else " (左偏新)"
-            suffix_r = self.config_mgr.get_text("ui_dialog_compare_status_diff_r_newer", " (右偏新)") if self.config_mgr else " (右偏新)"
-            status = status_base + (suffix_l if d['l_newer'] else suffix_r)
-            advice = self.config_mgr.get_text("ui_dialog_compare_status_diff_advice", "[➔] 更新至最新版本") if self.config_mgr else "[➔] 更新至最新版本"
-            return status, advice, _accent
-        return "", "", _accent
-
-    def run_sync(self, mode):
-        if not self.differences: return
-        
-        selected_diffs = []
-        for i, d in enumerate(self.differences):
-            if self.table.item(i, 0).checkState() == Qt.CheckState.Checked:
-                selected_diffs.append(d)
-                
-        self.presenter.run_sync(mode, selected_diffs)
-
-    def show_sync_result(self, success: int, errors: int) -> None:
-        title = self.config_mgr.get_text("ui_dialog_compare_finished_title", "完成") if self.config_mgr else "完成"
-        msg = self.config_mgr.get_text("ui_dialog_compare_finished_msg", "成功: {}, 失敗: {}").format(success, errors) if self.config_mgr else f"成功: {success}, 失敗: {errors}"
-        QMessageBox.information(self, title, msg)
-        self.start_scan()
-        if self.parent():
-            if hasattr(self.parent(), 'refresh_all_panes'): self.parent().refresh_all_panes()
-            if hasattr(self.parent(), 'statusBar'): 
-                msg_done = self.config_mgr.get_text("ui_dialog_compare_sync_done", "同步完成") if self.config_mgr else "同步完成"
-                self.parent().statusBar().showMessage(msg_done, 8000)
-
-    def ask_confirmation(self, title: str, message: str) -> bool:
-        return QMessageBox.question(self, title, message) == QMessageBox.StandardButton.Yes
 
 
 # ── Background Workers ──────────────────────────────────────────────────────────
