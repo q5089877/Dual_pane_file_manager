@@ -230,10 +230,6 @@ class ConfigManager:
         except Exception:
             return {}
 
-    def get_color_val(self, key: str, theme_rel_path: str = "theme.json") -> str:
-        colors = self.get_theme_colors(theme_rel_path)
-        return colors.get(key, "#ffffff")
-
     # ── 內建主題 Preset ────────────────────────────────────────────────────────
     _THEME_PRESETS: dict[str, dict] = {
         "調光護眼 (預設)": {

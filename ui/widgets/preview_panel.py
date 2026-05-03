@@ -120,7 +120,7 @@ class FloatingActionBar(QWidget):
         # actionBarBg: 從 glassBg 取 RGB，固定 alpha=0.25（不依賴 theme.json 是否有此 key）
         bar_bg = "rgba(30, 34, 45, 0.25)"
         if self.config_mgr:
-            c = QColor(self.config_mgr.get_color_val("glassBg"))
+            c = QColor(self.config_mgr.get_theme_colors().get("glassBg", "#ffffff"))
             bar_bg = f"rgba({c.red()}, {c.green()}, {c.blue()}, 0.25)"
 
         qss = f"""
@@ -167,7 +167,7 @@ class FloatingActionBar(QWidget):
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(20)
         if self.config_mgr:
-            color = QColor(self.config_mgr.get_color_val("shadow"))
+            color = QColor(self.config_mgr.get_theme_colors().get("shadow", "#000000"))
         else:
             color = QColor(0, 0, 0, 180)
         shadow.setColor(color)
@@ -279,7 +279,7 @@ class PreviewPanel(QWidget):
             # Prevent white flash before first HTML render
             bg_color = QColor("#1e1e2e")
             if self.config_mgr:
-                bg_color = QColor(self.config_mgr.get_color_val("bg"))
+                bg_color = QColor(self.config_mgr.get_theme_colors().get("bg", "#1e1e2e"))
             self._web.page().setBackgroundColor(bg_color)
             self._web.setHtml(self._placeholder_html())
             layout.addWidget(self._web)
