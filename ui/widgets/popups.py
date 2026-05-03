@@ -1,6 +1,6 @@
 import os
 from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMenu, QCheckBox,
+    QFrame, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMenu,
     QDialog, QLineEdit, QDialogButtonBox
 )
 from PyQt6.QtCore import Qt, QTimer
@@ -106,11 +106,7 @@ class PathPopup(QFrame):
 
 
 class PinPopup(QFrame):
-    """Popup showing pinned items with TTL countdown dots."""
-
-    _DOT_FRESH  = "pinDotFresh"
-    _DOT_WARN   = "pinDotWarn"
-    _DOT_URGENT = "pinDotUrgent"
+    """Popup showing pinned items as quick bookmarks."""
 
     def __init__(self, main_window, parent=None):
         super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
@@ -141,21 +137,12 @@ class PinPopup(QFrame):
             self.layout.addWidget(lbl)
             return
 
-        # Sort: important first, then by days_left asc, done last
-        def _sort_key(p):
-            if p.get("done"):
-                return (2, 0)
-            if p.get("important"):
-                return (0, 0)
-            return (1, config_mgr.get_pin_days_left(p))
-
-        for pin in sorted(pins, key=_sort_key):
-            days_left = config_mgr.get_pin_days_left(pin)
+        # Sort: important first, then rest
+        for pin in sorted(pins, key=lambda p: (0 if p.get("important") else 1)):
             path = pin["path"]
             name = os.path.basename(path) or path
             note = pin.get("note", "").strip()
             is_important = pin.get("important", False)
-            is_done = pin.get("done", False)
 
             cell = QFrame()
             cell_layout = QVBoxLayout(cell)
@@ -167,23 +154,12 @@ class PinPopup(QFrame):
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(4)
 
-            # ✓ 完成勾選框
-            chk = QCheckBox()
-            chk.setChecked(is_done)
-            chk.setObjectName("pinDoneCheck")
-            done_tip = self._config_mgr.get_text("ui_popup_pin_done_tooltip", "標為完成（24 小時後自動清除）") if self._config_mgr else "標為完成（24 小時後自動清除）"
-            chk.setToolTip(done_tip)
-            def _on_done(checked, p=path):
-                self.main_window.config_mgr.set_pin_done(p, checked)
-                self._refresh()
-            chk.clicked.connect(_on_done)
-
             # 主按鈕
             icon = "📁 " if pin.get("is_dir") else "📄 "
             btn = QPushButton(icon + name)
             btn.setToolTip(path)
             btn.setFlat(True)
-            btn.setObjectName("pinItemBtnDone" if is_done else "pinItemBtn")
+            btn.setObjectName("pinItemBtn")
             btn.clicked.connect(lambda checked, p=path: self._on_clicked(p))
             btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             btn.customContextMenuRequested.connect(
@@ -194,35 +170,16 @@ class PinPopup(QFrame):
             star_btn.setFixedWidth(24)
             star_btn.setFlat(True)
             star_btn.setObjectName("pinStarActive" if is_important else "pinStar")
-            imp_tip = self._config_mgr.get_text("ui_popup_pin_important_tooltip", "永久釘選（30 天未使用自動降級）") if self._config_mgr else "永久釘選（30 天未使用自動降級）"
-            not_imp_tip = self._config_mgr.get_text("ui_popup_pin_not_important_tooltip", "標為重要（永久保留）") if self._config_mgr else "標為重要（永久保留）"
+            imp_tip = self._config_mgr.get_text("ui_popup_pin_important_tooltip", "永久釘選") if self._config_mgr else "永久釘選"
+            not_imp_tip = self._config_mgr.get_text("ui_popup_pin_not_important_tooltip", "標為重要（置頂顯示）") if self._config_mgr else "標為重要（置頂顯示）"
             star_btn.setToolTip(imp_tip if is_important else not_imp_tip)
             def _on_star(_checked, p=path, imp=is_important):
                 self.main_window.config_mgr.set_pin_important(p, not imp)
                 self._refresh()
             star_btn.clicked.connect(_on_star)
 
-            # TTL 圓點（重要釘選不顯示）
-            if not is_important and not is_done:
-                dot = QLabel()
-                dot.setFixedSize(10, 10)
-                if days_left <= 1:
-                    dot.setObjectName(self._DOT_URGENT)
-                    dot.setToolTip(self._config_mgr.get_text("ui_popup_pin_expiry_today", "今天到期") if self._config_mgr else "今天到期")
-                elif days_left <= 3:
-                    dot.setObjectName(self._DOT_WARN)
-                    dot.setToolTip(self._config_mgr.get_text("ui_popup_pin_expiry_days", "剩 {} 天").format(days_left) if self._config_mgr else f"剩 {days_left} 天")
-                else:
-                    dot.setObjectName(self._DOT_FRESH)
-                    dot.setToolTip(self._config_mgr.get_text("ui_popup_pin_expiry_days", "剩 {} 天").format(days_left) if self._config_mgr else f"剩 {days_left} 天")
-            else:
-                dot = None
-
-            row_layout.addWidget(chk, 0)
             row_layout.addWidget(btn, 1)
             row_layout.addWidget(star_btn, 0)
-            if dot:
-                row_layout.addWidget(dot, 0)
             cell_layout.addWidget(row)
 
             if note:
@@ -235,8 +192,6 @@ class PinPopup(QFrame):
 
     def _on_clicked(self, path: str):
         self.hide()
-        if hasattr(self.main_window, "config_mgr"):
-            self.main_window.config_mgr.touch_pin(path)
         norm = os.path.normpath(path)
         if os.path.isdir(norm):
             self.main_window.on_quick_access_clicked(norm)

@@ -29,12 +29,7 @@ class PinDropButton(QToolButton):
         event.acceptProposedAction()
 
     def _restore_object_name(self):
-        import os
-        win = self.main_window
-        if hasattr(win, "config_mgr"):
-            pins = win.config_mgr.get_pins()
-            urgent = sum(1 for p in pins if win.config_mgr.get_pin_days_left(p) <= 1)
-            self.setObjectName("pinBtnUrgent" if urgent else "pinBtn")
+        self.setObjectName("pinBtn")
 
     def _refresh_style(self):
         self.style().unpolish(self)

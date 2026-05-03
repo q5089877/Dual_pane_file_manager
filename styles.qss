@@ -389,20 +389,6 @@ QToolButton#pinBtn:hover {
     border-color: {{activeBorder}};
 }
 
-QToolButton#pinBtnUrgent {
-    background-color: {{panelBg}};
-    color: {{danger}};
-    font-size: 9.5pt;
-    font-weight: bold;
-    border: 1px solid {{danger}};
-    border-radius: 4px;
-    padding: 2px 8px;
-}
-
-QToolButton#pinBtnUrgent:hover {
-    background-color: {{danger}};
-    color: #ffffff;
-}
 
 QToolButton#pinBtnDrop {
     background-color: {{success}};
@@ -434,15 +420,6 @@ QPushButton#pinItemBtn:hover {
     border-radius: 3px;
 }
 
-QPushButton#pinItemBtnDone {
-    background-color: transparent;
-    color: {{textMuted}};
-    text-align: left;
-    border: none;
-    padding: 4px 6px;
-    font-size: 10.5pt;
-    text-decoration: line-through;
-}
 
 QPushButton#pinStar {
     background-color: transparent;
@@ -472,21 +449,6 @@ QLabel#pinEmptyLabel {
     font-size: 10pt;
 }
 
-/* TTL dots */
-QLabel#pinDotFresh {
-    background-color: {{pin_fresh}};
-    border-radius: 5px;
-}
-
-QLabel#pinDotWarn {
-    background-color: {{pin_warn}};
-    border-radius: 5px;
-}
-
-QLabel#pinDotUrgent {
-    background-color: {{pin_urgent}};
-    border-radius: 5px;
-}
 
 /* Tab Plus Button */
 QToolButton#addTabBtn {

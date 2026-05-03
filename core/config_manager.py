@@ -482,9 +482,6 @@ class ConfigManager:
             "pinned_at": datetime.datetime.now().isoformat(timespec="seconds"),
             "note": note.strip(),
             "important": False,
-            "last_accessed": None,
-            "done": False,
-            "done_at": None,
         })
         config["pinned_items"] = pins
         try:
@@ -501,17 +498,6 @@ class ConfigManager:
         if len(new_pins) == len(pins):
             return False
         return self._save_pins(config, new_pins)
-
-    def set_pin_done(self, path: str, done: bool) -> bool:
-        import datetime
-        config = self.load_config()
-        pins: list = config.get("pinned_items", [])
-        for p in pins:
-            if p["path"] == path:
-                p["done"] = done
-                p["done_at"] = datetime.datetime.now().isoformat(timespec="seconds") if done else None
-                return self._save_pins(config, pins)
-        return False
 
     def set_pin_important(self, path: str, important: bool) -> bool:
         config = self.load_config()
@@ -531,68 +517,6 @@ class ConfigManager:
                 return self._save_pins(config, pins)
         return False
 
-    def touch_pin(self, path: str) -> bool:
-        import datetime
-        config = self.load_config()
-        pins: list = config.get("pinned_items", [])
-        for p in pins:
-            if p["path"] == path:
-                p["last_accessed"] = datetime.datetime.now().isoformat(timespec="seconds")
-                return self._save_pins(config, pins)
-        return False
-
-    def get_pin_days_left(self, pin: dict, ttl_days: int = 7) -> int:
-        import datetime
-        if pin.get("important"):
-            return -1  # never expires
-        try:
-            age = (datetime.datetime.now() -
-                   datetime.datetime.fromisoformat(pin["pinned_at"])).days
-            return max(0, ttl_days - age)
-        except Exception:
-            return -1
-
-    def cleanup_expired_pins(self, ttl_days: int = 7, on_startup: bool = False) -> list[str]:
-        import datetime
-        config = self.load_config()
-        pins: list = config.get("pinned_items", [])
-        now = datetime.datetime.now()
-        alive, removed = [], []
-        for p in pins:
-            if p.get("done"):
-                if on_startup:
-                    removed.append(p["path"])
-                    continue
-                done_at = p.get("done_at")
-                try:
-                    hours = (now - datetime.datetime.fromisoformat(done_at)).total_seconds() / 3600
-                except Exception:
-                    hours = 0
-                if hours >= 24:
-                    removed.append(p["path"])
-                    continue
-            if p.get("important"):
-                last = p.get("last_accessed") or p.get("pinned_at")
-                try:
-                    idle_days = (now - datetime.datetime.fromisoformat(last)).days
-                except Exception:
-                    idle_days = 0
-                if idle_days >= 30:
-                    p["important"] = False
-                    p["pinned_at"] = now.isoformat(timespec="seconds")
-                alive.append(p)
-                continue
-            try:
-                age = (now - datetime.datetime.fromisoformat(p["pinned_at"])).days
-            except Exception:
-                age = 0
-            if age >= ttl_days:
-                removed.append(p["path"])
-            else:
-                alive.append(p)
-        if len(alive) != len(pins):
-            self._save_pins(config, alive)
-        return removed
 
     @staticmethod
     def get_fixed_drives() -> list[str]:

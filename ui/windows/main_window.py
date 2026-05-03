@@ -214,7 +214,6 @@ class MainWindow(QMainWindow):
         self.nightly_scanner_worker = None
         self._update_worker = None
 
-        QTimer.singleShot(500, self._cleanup_expired_pins)
         # 啟動 5 秒後進行更新檢查 (非同步)
         QTimer.singleShot(5000, self._start_update_check)
 
@@ -576,19 +575,9 @@ class MainWindow(QMainWindow):
         self.tool_bar.clear()
 
         pins = self.config_mgr.get_pins()
-        urgent = sum(1 for p in pins if not p.get("done") and self.config_mgr.get_pin_days_left(p) <= 1)
-        done_count = sum(1 for p in pins if p.get("done"))
-        active_count = len(pins) - done_count
-        
-        if urgent:
-            tpl = self.config_mgr.get_text("ui_main_pinned_urgent", "已釘選 (⚠️ {})")
-            pin_label = tpl.format(urgent)
-        elif done_count:
-            tpl = self.config_mgr.get_text("ui_main_pinned_active", "已釘選 ({}) | ✓{}")
-            pin_label = tpl.format(active_count, done_count)
-        elif pins:
+        if pins:
             tpl = self.config_mgr.get_text("ui_main_pinned_count", "已釘選 ({})")
-            pin_label = tpl.format(active_count)
+            pin_label = tpl.format(len(pins))
         else:
             pin_label = self.config_mgr.get_text("ui_main_pinned_label", "釘選項目")
 
@@ -598,7 +587,7 @@ class MainWindow(QMainWindow):
         self.pin_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("pin")))
         self.pin_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.pin_btn.setToolTip(self.config_mgr.get_text("ui_main_pinned_tooltip", "已釘選的檔案 / 資料夾（Ctrl+D 釘選 / 拖曳至此快速釘選）"))
-        self.pin_btn.setObjectName("pinBtnUrgent" if urgent else "pinBtn")
+        self.pin_btn.setObjectName("pinBtn")
         self.pin_btn.clicked.connect(self._show_pin_menu)
         self.tool_bar.addWidget(self.pin_btn)
 
@@ -719,10 +708,6 @@ class MainWindow(QMainWindow):
         self.show_toast(msg, "success")
         self.refresh_toolbar()
 
-    def set_pin_done(self, path: str, done: bool):
-        self.config_mgr.set_pin_done(path, done)
-        self.refresh_toolbar()
-
     def set_pin_important(self, path: str, important: bool):
         self.config_mgr.set_pin_important(path, important)
         label = self.config_mgr.get_text("ui_main_pinned_important", "已標為重要（永久保留）") if important else self.config_mgr.get_text("ui_main_pinned_unimportant", "已取消重要標記")
@@ -752,16 +737,6 @@ class MainWindow(QMainWindow):
             pos = self.mapToGlobal(QPoint(0, 40))
         self.pin_popup.move(pos)
         self.pin_popup.show()
-
-    def _cleanup_expired_pins(self):
-        """Run on startup: remove expired pins and notify user."""
-        removed = self.config_mgr.cleanup_expired_pins(ttl_days=7, on_startup=True)
-        if removed:
-            self.refresh_toolbar()
-            names = ", ".join(os.path.basename(p) or p for p in removed[:3])
-            suffix = self.config_mgr.get_text("ui_main_toast_and_more", " 等 {} 個").format(len(removed)) if len(removed) > 3 else ""
-            msg = self.config_mgr.get_text("ui_main_toast_pinned_expired", "釘選已到期自動移除：{}{}")
-            self.show_toast(msg.format(names, suffix), "info")
 
     def set_active_pane(self, pane):
         self.active_pane = pane
