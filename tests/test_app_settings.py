@@ -7,7 +7,6 @@ AppSettings 深度重構 — 完整測試計畫
 執行: python -m pytest tests/test_app_settings.py -v
 """
 import json
-import os
 import re
 import sys
 import datetime
@@ -306,45 +305,6 @@ class TestFormatValidation:
         assert ok is True
         assert result == "my_file"
 
-
-# ============================================================================
-# Test Suite 5: auto_discover_remote_root
-# ============================================================================
-
-class TestAutoDiscoverRemoteRoot:
-    """驗證智慧路徑偵測的優先搜尋與 Fallback 行為。"""
-
-    def test_returns_none_when_no_path_exists(self, cfg):
-        """TC-25: 所有磁碟都不存在目標路徑時回傳 None。"""
-        with patch("os.path.exists", return_value=False):
-            result = cfg.auto_discover_remote_root()
-            assert result is None
-
-    def test_returns_first_match(self, cfg):
-        """TC-26: 優先回傳第一個匹配的磁碟 (K 優先)。"""
-        suffix = r"network_share\search_index"
-        cfg.config = {"remote_index_suffix": suffix}
-        expected = os.path.join("K:\\", suffix)
-
-        def mock_exists(path):
-            return path == expected
-
-        with patch("os.path.exists", side_effect=mock_exists):
-            result = cfg.auto_discover_remote_root()
-            assert result == expected
-
-    def test_fallback_to_other_drives(self, cfg):
-        """TC-27: K 不存在時 Fallback 到 H。"""
-        suffix = r"network_share\search_index"
-        cfg.config = {"remote_index_suffix": suffix}
-        h_path = os.path.join("H:\\", suffix)
-
-        def mock_exists(path):
-            return path == h_path
-
-        with patch("os.path.exists", side_effect=mock_exists):
-            result = cfg.auto_discover_remote_root()
-            assert result == h_path
 
 
 # ============================================================================

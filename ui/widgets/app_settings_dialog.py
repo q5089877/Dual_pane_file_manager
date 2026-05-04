@@ -2,23 +2,11 @@ import datetime, re
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QMessageBox, QListWidget, QInputDialog, QCheckBox,
-    QToolButton, QTabWidget, QWidget, QFormLayout, QSpinBox, QFileDialog, QFrame,
+    QTabWidget, QWidget, QFormLayout, QSpinBox, QFileDialog, QFrame,
     QComboBox,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
+from PyQt6.QtCore import Qt, pyqtSignal
 
-
-class PathDiscoveryWorker(QThread):
-    """非同步智慧路徑偵測 Worker"""
-    finished = pyqtSignal(str)
-
-    def __init__(self, config_mgr):
-        super().__init__()
-        self.config_mgr = config_mgr
-
-    def run(self):
-        path = self.config_mgr.auto_discover_remote_root()
-        self.finished.emit(path or "")
 
 
 class AppSettingsDialog(QDialog):
@@ -157,17 +145,11 @@ class AppSettingsDialog(QDialog):
         self._remote_root_edit = QLineEdit(s.get("remote_index_root", ""))
         self._remote_root_edit.setPlaceholderText(
             self.config_mgr.get_text("ui_dialog_settings_remote_root_placeholder", "K:\\... 資料庫存放路徑"))
-        self._discover_btn = QToolButton()
-        self._discover_btn.setText("🪄")
-        self._discover_btn.setToolTip(
-            self.config_mgr.get_text("ui_dialog_settings_remote_root_tooltip", "智慧偵測網路索引位置"))
-        self._discover_btn.clicked.connect(self._on_discover_clicked)
         browse_remote = QPushButton("📂")
         browse_remote.setFixedWidth(32)
         browse_remote.clicked.connect(lambda: self._browse_dir(self._remote_root_edit))
         row_remote = QHBoxLayout()
         row_remote.addWidget(self._remote_root_edit)
-        row_remote.addWidget(self._discover_btn)
         row_remote.addWidget(browse_remote)
         f_common.addRow(self.config_mgr.get_text("ui_dialog_settings_label_remote_root", "團隊索引存放路徑："),
                         row_remote)
@@ -285,36 +267,6 @@ class AppSettingsDialog(QDialog):
     def _on_remove_monitored_path(self):
         for item in self._path_list.selectedItems():
             self._path_list.takeItem(self._path_list.row(item))
-
-    def _on_discover_clicked(self):
-        self._discover_btn.setEnabled(False)
-        self._remote_root_edit.setPlaceholderText(
-            self.config_mgr.get_text("ui_dialog_settings_detecting", "正在智慧偵測中..."))
-        self._discovery_worker = PathDiscoveryWorker(self._config_mgr)
-        self._discovery_worker.finished.connect(self._on_discovery_finished)
-        self._discovery_worker.start()
-
-    def _on_discovery_finished(self, path: str) -> None:
-        self._discover_btn.setEnabled(True)
-        if path:
-            self._remote_root_edit.setText(path)
-            ok_qss = "background-color: {{success}}; color: {{text}};"
-            self._remote_root_edit.setStyleSheet(
-                self._config_mgr.apply_theme_to_text(ok_qss) if self._config_mgr else ok_qss)
-            QTimer.singleShot(1000, lambda: self._remote_root_edit.setStyleSheet(""))
-            QMessageBox.information(
-                self,
-                self.config_mgr.get_text("ui_dialog_settings_detect_success_title", "偵測成功"),
-                self.config_mgr.get_text("ui_dialog_settings_detect_success_msg",
-                                         "已尋獲索引存放區：\n{}").format(path))
-        else:
-            self._remote_root_edit.setPlaceholderText(
-                self.config_mgr.get_text("ui_dialog_settings_detect_fail", "偵測失敗，請手動指定"))
-            QMessageBox.warning(
-                self,
-                self.config_mgr.get_text("ui_dialog_settings_detect_fail_title", "偵測失敗"),
-                self.config_mgr.get_text("ui_dialog_settings_detect_fail_msg",
-                                         "無法自動定位網路索引，請手動選擇資料夾。"))
 
     def _browse_dir(self, edit: QLineEdit) -> None:
         title = self.config_mgr.get_text("ui_dialog_settings_dlg_select_dir_general", "選擇資料夾")

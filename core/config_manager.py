@@ -149,24 +149,7 @@ class ConfigManager:
             except Exception:
                 pass
 
-        remote_root = config.get("remote_index_root", "").strip()
-        if not remote_root or not os.path.exists(remote_root):
-            discovered = self.auto_discover_remote_root()
-            if discovered:
-                config["remote_index_root"] = discovered
-
         return config
-
-    def auto_discover_remote_root(self):
-        """遍歷磁碟代號，尋找符合預期路徑後綴的掛載點。"""
-        config = getattr(self, "config", {})
-        suffix = config.get("remote_index_suffix", self._DEFAULT_REMOTE_INDEX_SUFFIX)
-        search_drives = ['K', 'H', 'G', 'S', 'Z', 'Y', 'P', 'Q'] + list(string.ascii_uppercase)
-        for drive in search_drives:
-            potential = os.path.join(f"{drive}:\\", suffix)
-            if os.path.exists(potential):
-                return potential
-        return None
 
     def get_update_source_path(self):
         """尋找更新來源目錄路徑。"""
