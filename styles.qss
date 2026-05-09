@@ -205,12 +205,56 @@ QSplitter::handle {
 }
 
 /* Input Fields */
-QLineEdit, QSpinBox, QDateEdit, QComboBox {
+QLineEdit, QDateEdit, QComboBox {
     background-color: {{panelBg}};
     color: {{text}};
     border: 1px solid {{border}};
     padding: 4px 8px;
     border-radius: 2px;
+}
+
+QSpinBox {
+    background-color: {{panelBg}};
+    color: {{text}};
+    border: 1px solid {{border}};
+    padding: 4px 22px 4px 8px;
+    border-radius: 2px;
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    subcontrol-origin: border;
+    width: 20px;
+    background-color: {{panelBg}};
+    border-left: 1px solid {{border}};
+}
+
+QSpinBox::up-button {
+    subcontrol-position: top right;
+    border-bottom: 1px solid {{border}};
+}
+
+QSpinBox::down-button {
+    subcontrol-position: bottom right;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background-color: {{activeTab}};
+}
+
+QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
+    background-color: {{border}};
+}
+
+QSpinBox::up-arrow {
+    image: url(ui/spin_up.svg);
+    width: 8px;
+    height: 5px;
+}
+
+QSpinBox::down-arrow {
+    image: url(ui/spin_down.svg);
+    width: 8px;
+    height: 5px;
 }
 
 QLineEdit:focus {

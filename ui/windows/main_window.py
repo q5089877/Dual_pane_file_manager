@@ -636,6 +636,19 @@ class MainWindow(QMainWindow):
 
         self.tool_bar.addSeparator()
 
+        # ── 常用路徑 ────────────────────────────────────────────
+        fav_btn = QToolButton()
+        fav_btn.setText(self.config_mgr.get_text("ui_main_btn_favorites", "常用"))
+        fav_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("star")))
+        fav_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        fav_btn.setToolTip(self.config_mgr.get_text(
+            "ui_main_btn_favorites_tooltip", "常用路徑"))
+        fav_btn.setObjectName("favoritesBtn")
+        fav_btn.clicked.connect(self._show_favorites_menu)
+        self.tool_bar.addWidget(fav_btn)
+
+        self.tool_bar.addSeparator()
+
         # ── 群組 3：進階功能（低頻）──────────────────────────
         snap_btn = QToolButton()
         snap_btn.setText(self.config_mgr.get_text(
@@ -1296,6 +1309,88 @@ class MainWindow(QMainWindow):
         pos = snap_btn.mapToGlobal(
             QPoint(0, snap_btn.height())) if snap_btn else self.mapToGlobal(QPoint(0, 40))
         menu.exec(pos)
+
+    # ── Favorites ─────────────────────────────────────────────────────────────
+
+    def _show_favorites_menu(self) -> None:
+        from PyQt6.QtWidgets import QToolButton
+        menu = QMenu(self)
+
+        favorites = self.config_mgr.get_favorites()
+        if favorites:
+            for entry in favorites:
+                group_name = entry.get("group", "")
+                paths = entry.get("paths", [])
+                if not paths:
+                    continue
+                sub = menu.addMenu(f"📁 {group_name}")
+                for path in paths:
+                    act = sub.addAction(path)
+                    act.triggered.connect(
+                        lambda checked, p=path: self._navigate_to_favorite(p))
+        else:
+            empty_act = menu.addAction(
+                self.config_mgr.get_text("ui_favorites_empty", "(尚無常用路徑)"))
+            empty_act.setEnabled(False)
+
+        menu.addSeparator()
+        add_act = menu.addAction(
+            self.config_mgr.get_text("ui_favorites_add_current", "➕ 將目前路徑加入常用..."))
+        add_act.triggered.connect(self._add_current_path_to_favorites)
+        manage_act = menu.addAction(
+            self.config_mgr.get_text("ui_favorites_manage", "✏️ 管理常用路徑..."))
+        manage_act.triggered.connect(self._open_favorites_manager)
+
+        fav_btn = None
+        for w in self.tool_bar.findChildren(QToolButton):
+            if w.objectName() == "favoritesBtn":
+                fav_btn = w
+                break
+        pos = fav_btn.mapToGlobal(
+            QPoint(0, fav_btn.height())) if fav_btn else self.mapToGlobal(QPoint(0, 40))
+        menu.exec(pos)
+
+    def _navigate_to_favorite(self, path: str) -> None:
+        pane = getattr(self, "active_pane", None)
+        if pane and hasattr(pane, "set_path"):
+            pane.set_path(path)
+
+    def _add_current_path_to_favorites(self) -> None:
+        from PyQt6.QtWidgets import QInputDialog
+        pane = getattr(self, "active_pane", None)
+        if not pane:
+            return
+        current = getattr(pane, "_current_path", "") or ""
+        if not current or current == "home://":
+            return
+
+        favorites = self.config_mgr.get_favorites()
+        group_names = [e["group"] for e in favorites]
+
+        title = self.config_mgr.get_text("ui_favorites_add_current_title", "加入常用路徑")
+        label = self.config_mgr.get_text("ui_favorites_select_group", "選擇或輸入群組名稱：")
+        group, ok = QInputDialog.getItem(
+            self, title, label, group_names or ["常用"],
+            editable=True)
+        if not ok or not group.strip():
+            return
+        group = group.strip()
+
+        for entry in favorites:
+            if entry["group"] == group:
+                if current not in entry["paths"]:
+                    entry["paths"].append(current)
+                self.config_mgr.save_favorites(favorites)
+                return
+
+        favorites.append({"group": group, "paths": [current]})
+        self.config_mgr.save_favorites(favorites)
+
+    def _open_favorites_manager(self) -> None:
+        from ui.widgets.favorites_dialog import FavoritesDialog
+        dlg = FavoritesDialog(self.config_mgr, self)
+        dlg.exec()
+        self.refresh_toolbar()
 
     def _save_snapshot(self):
         from PyQt6.QtWidgets import QInputDialog

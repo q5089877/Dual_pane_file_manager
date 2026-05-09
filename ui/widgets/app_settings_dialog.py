@@ -1,4 +1,5 @@
-import datetime, re
+import datetime
+import re
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QMessageBox, QListWidget, QInputDialog, QCheckBox,
@@ -6,7 +7,6 @@ from PyQt6.QtWidgets import (
     QComboBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-
 
 
 class AppSettingsDialog(QDialog):
@@ -23,9 +23,10 @@ class AppSettingsDialog(QDialog):
         self._backup_lang = s.get("language", "zh_TW")
         self._block_theme_signal = False
 
-        title = self.config_mgr.get_text("ui_dialog_settings_title", "設定") if self.config_mgr else "設定"
+        title = self.config_mgr.get_text(
+            "ui_dialog_settings_title", "設定") if self.config_mgr else "設定"
         self.setWindowTitle(title)
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(540)
         self._build_ui(s)
 
     def _build_ui(self, s: dict) -> None:
@@ -44,13 +45,15 @@ class AppSettingsDialog(QDialog):
         btn_row.setContentsMargins(12, 8, 12, 0)
         btn_row.addStretch()
 
-        btn_save_text = self.config_mgr.get_text("ui_dialog_settings_btn_save", "完成並儲存") if self.config_mgr else "完成並儲存"
+        btn_save_text = self.config_mgr.get_text(
+            "ui_dialog_settings_btn_save", "完成並儲存") if self.config_mgr else "完成並儲存"
         save_btn = QPushButton(btn_save_text)
         save_btn.setStyleSheet("font-weight: bold; padding: 6px 20px;")
         save_btn.setDefault(True)
         save_btn.clicked.connect(self.accept)
 
-        btn_cancel_text = self.config_mgr.get_text("ui_dialog_settings_btn_cancel", "取消") if self.config_mgr else "取消"
+        btn_cancel_text = self.config_mgr.get_text(
+            "ui_dialog_settings_btn_cancel", "取消") if self.config_mgr else "取消"
         cancel_btn = QPushButton(btn_cancel_text)
         cancel_btn.clicked.connect(self.reject)
 
@@ -91,7 +94,8 @@ class AppSettingsDialog(QDialog):
         self._theme_combo.addItems(self.config_mgr.get_theme_names())
         self._theme_combo.setCurrentText(s["theme_name"])
         self._theme_combo.currentTextChanged.connect(self._on_theme_changed)
-        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_theme", "主題："), self._theme_combo)
+        f.addRow(self.config_mgr.get_text(
+            "ui_dialog_settings_label_theme", "主題："), self._theme_combo)
 
         self._lang_combo = QComboBox()
         l_zh = self.config_mgr.get_text("ui_lang_zh_TW", "繁體中文")
@@ -103,11 +107,13 @@ class AppSettingsDialog(QDialog):
             if code == cur_lang:
                 self._lang_combo.setCurrentIndex(i)
                 break
-        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_lang", "語言："), self._lang_combo)
+        f.addRow(self.config_mgr.get_text(
+            "ui_dialog_settings_label_lang", "語言："), self._lang_combo)
 
         self._restore_session_chk = QCheckBox(
             self.config_mgr.get_text("ui_dialog_settings_restore_session", "啟動時還原上一次的分頁"))
-        self._restore_session_chk.setChecked(s.get("restore_last_session", True))
+        self._restore_session_chk.setChecked(
+            s.get("restore_last_session", True))
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_startup", "啟動行為："),
                  self._restore_session_chk)
 
@@ -147,7 +153,8 @@ class AppSettingsDialog(QDialog):
             self.config_mgr.get_text("ui_dialog_settings_remote_root_placeholder", "K:\\... 資料庫存放路徑"))
         browse_remote = QPushButton("📂")
         browse_remote.setFixedWidth(32)
-        browse_remote.clicked.connect(lambda: self._browse_dir(self._remote_root_edit))
+        browse_remote.clicked.connect(
+            lambda: self._browse_dir(self._remote_root_edit))
         row_remote = QHBoxLayout()
         row_remote.addWidget(self._remote_root_edit)
         row_remote.addWidget(browse_remote)
@@ -185,8 +192,10 @@ class AppSettingsDialog(QDialog):
             self._path_list.addItem(p)
         f_master.addRow(self._path_list)
 
-        btn_add_text = self.config_mgr.get_text("ui_dialog_settings_btn_add_path", "新增路徑")
-        btn_rm_text  = self.config_mgr.get_text("ui_dialog_settings_btn_remove_path", "移除所選")
+        btn_add_text = self.config_mgr.get_text(
+            "ui_dialog_settings_btn_add_path", "新增路徑")
+        btn_rm_text = self.config_mgr.get_text(
+            "ui_dialog_settings_btn_remove_path", "移除所選")
         add_btn = QPushButton(btn_add_text)
         add_btn.clicked.connect(self._on_add_monitored_path)
         rm_btn = QPushButton(btn_rm_text)
@@ -202,31 +211,20 @@ class AppSettingsDialog(QDialog):
             self.config_mgr.get_text("ui_dialog_settings_nightly_note",
                                      "夜間自動掃描索引的執行時間（24小時制）")))
 
-        # 預設搜尋根目錄
-        self._scan_root_edit = QLineEdit(s.get("default_scan_root", ""))
-        self._scan_root_edit.setPlaceholderText(
-            self.config_mgr.get_text("ui_dialog_settings_scan_root_placeholder", "K: 或其他磁碟根目錄"))
-        browse_scan = QPushButton("📂")
-        browse_scan.setFixedWidth(32)
-        browse_scan.clicked.connect(lambda: self._browse_dir(self._scan_root_edit))
-        row_scan = QHBoxLayout()
-        row_scan.addWidget(self._scan_root_edit)
-        row_scan.addWidget(browse_scan)
-        f_master.addRow(self.config_mgr.get_text("ui_dialog_settings_label_scan_root", "預設搜尋根目錄："),
-                        row_scan)
-
         # 夜間排程
         self._hour_spin = QSpinBox()
         self._hour_spin.setRange(0, 23)
         self._hour_spin.setValue(s.get("nightly_scan_hour", 2))
-        self._hour_spin.setSuffix(self.config_mgr.get_text("ui_dialog_settings_hour_suffix", " 時"))
+        self._hour_spin.setSuffix(self.config_mgr.get_text(
+            "ui_dialog_settings_hour_suffix", " 時"))
         f_master.addRow(self.config_mgr.get_text("ui_dialog_settings_label_nightly_hour", "夜間掃描時間："),
                         self._hour_spin)
 
         self._min_spin = QSpinBox()
         self._min_spin.setRange(0, 59)
         self._min_spin.setValue(s.get("nightly_scan_minute", 0))
-        self._min_spin.setSuffix(self.config_mgr.get_text("ui_dialog_settings_min_suffix", " 分"))
+        self._min_spin.setSuffix(self.config_mgr.get_text(
+            "ui_dialog_settings_min_suffix", " 分"))
         f_master.addRow(self.config_mgr.get_text("ui_dialog_settings_label_nightly_minute", "分鐘："),
                         self._min_spin)
 
@@ -242,21 +240,26 @@ class AppSettingsDialog(QDialog):
 
     def _on_master_toggled(self, checked: bool) -> None:
         if checked:
-            title = self.config_mgr.get_text("ui_dialog_settings_auth_title", "權限驗證")
-            msg   = self.config_mgr.get_text("ui_dialog_settings_auth_msg", "開啟生產者模式請輸入密碼:")
-            txt, ok = QInputDialog.getText(self, title, msg, QLineEdit.EchoMode.Password)
+            title = self.config_mgr.get_text(
+                "ui_dialog_settings_auth_title", "權限驗證")
+            msg = self.config_mgr.get_text(
+                "ui_dialog_settings_auth_msg", "開啟生產者模式請輸入密碼:")
+            txt, ok = QInputDialog.getText(
+                self, title, msg, QLineEdit.EchoMode.Password)
             if not ok or txt != self.config_mgr.get_master_password():
                 if ok:
                     QMessageBox.warning(
                         self,
-                        self.config_mgr.get_text("ui_dialog_common_error", "錯誤"),
+                        self.config_mgr.get_text(
+                            "ui_dialog_common_error", "錯誤"),
                         self.config_mgr.get_text("ui_dialog_settings_auth_err", "密碼不正確"))
                 self._is_master_chk.setChecked(False)
                 return
         self._master_section.setVisible(checked)
 
     def _on_add_monitored_path(self):
-        title = self.config_mgr.get_text("ui_dialog_settings_dlg_select_dir", "選擇要監測的資料夾")
+        title = self.config_mgr.get_text(
+            "ui_dialog_settings_dlg_select_dir", "選擇要監測的資料夾")
         path = QFileDialog.getExistingDirectory(self, title)
         if path:
             for i in range(self._path_list.count()):
@@ -269,7 +272,8 @@ class AppSettingsDialog(QDialog):
             self._path_list.takeItem(self._path_list.row(item))
 
     def _browse_dir(self, edit: QLineEdit) -> None:
-        title = self.config_mgr.get_text("ui_dialog_settings_dlg_select_dir_general", "選擇資料夾")
+        title = self.config_mgr.get_text(
+            "ui_dialog_settings_dlg_select_dir_general", "選擇資料夾")
         path = QFileDialog.getExistingDirectory(self, title, edit.text() or "")
         if path:
             edit.setText(path)
@@ -291,14 +295,16 @@ class AppSettingsDialog(QDialog):
         self._pdf_pages_spin = QSpinBox()
         self._pdf_pages_spin.setRange(1, 20)
         self._pdf_pages_spin.setValue(s.get("pdf_preview_max_pages", 3))
-        self._pdf_pages_spin.setSuffix(self.config_mgr.get_text("ui_dialog_settings_pdf_pages_suffix", " 頁"))
+        self._pdf_pages_spin.setSuffix(self.config_mgr.get_text(
+            "ui_dialog_settings_pdf_pages_suffix", " 頁"))
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_pdf_pages", "PDF 預覽頁數："),
                  self._pdf_pages_spin)
 
         # 刪除防呆
         self._confirm_delete_chk = QCheckBox(
             self.config_mgr.get_text("ui_dialog_settings_confirm_delete", "刪除檔案前顯示確認視窗"))
-        self._confirm_delete_chk.setChecked(s.get("confirm_before_delete", True))
+        self._confirm_delete_chk.setChecked(
+            s.get("confirm_before_delete", True))
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_delete", "刪除防呆："),
                  self._confirm_delete_chk)
 
@@ -313,7 +319,8 @@ class AppSettingsDialog(QDialog):
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_img_prefix", "圖片前綴："),
                  self._img_prefix_edit)
 
-        self._img_format_edit = QLineEdit(s.get("image_format", "%Y%m%d_%H%M%S"))
+        self._img_format_edit = QLineEdit(
+            s.get("image_format", "%Y%m%d_%H%M%S"))
         self._img_format_edit.setPlaceholderText("例: %Y%m%d_%H%M%S")
         self._img_format_edit.textChanged.connect(self._update_format_preview)
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_img_format", "圖片日期格式："),
@@ -325,7 +332,8 @@ class AppSettingsDialog(QDialog):
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_txt_prefix", "文字前綴："),
                  self._txt_prefix_edit)
 
-        self._txt_format_edit = QLineEdit(s.get("text_format", "%Y%m%d_%H%M%S"))
+        self._txt_format_edit = QLineEdit(
+            s.get("text_format", "%Y%m%d_%H%M%S"))
         self._txt_format_edit.setPlaceholderText("例: %Y%m%d_%H%M%S")
         self._txt_format_edit.textChanged.connect(self._update_format_preview)
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_txt_format", "文字日期格式："),
@@ -370,7 +378,8 @@ class AppSettingsDialog(QDialog):
             self._set_save_enabled(False)
 
     def _set_save_enabled(self, enabled: bool) -> None:
-        btn_text = self.config_mgr.get_text("ui_dialog_settings_btn_save", "完成並儲存")
+        btn_text = self.config_mgr.get_text(
+            "ui_dialog_settings_btn_save", "完成並儲存")
         for btn in self.findChildren(QPushButton):
             if btn.text() == btn_text:
                 btn.setEnabled(enabled)
@@ -380,12 +389,12 @@ class AppSettingsDialog(QDialog):
 
     def accept(self) -> None:
         self._config_mgr.apply_theme_preset(self._theme_combo.currentText())
-        m_paths = [self._path_list.item(i).text() for i in range(self._path_list.count())]
+        m_paths = [self._path_list.item(i).text()
+                   for i in range(self._path_list.count())]
 
         self._config_mgr.save_app_settings({
             "restore_last_session":  self._restore_session_chk.isChecked(),
             "remote_index_root":     self._remote_root_edit.text().strip(),
-            "default_scan_root":     self._scan_root_edit.text().strip(),
             "search_limit":          self._limit_spin.value(),
             "nightly_scan_hour":     self._hour_spin.value(),
             "nightly_scan_minute":   self._min_spin.value(),
@@ -406,7 +415,8 @@ class AppSettingsDialog(QDialog):
         if new_lang != self._backup_lang:
             QMessageBox.information(
                 self,
-                self.config_mgr.get_text("ui_dialog_settings_lang_changed_title", "語言已變更"),
+                self.config_mgr.get_text(
+                    "ui_dialog_settings_lang_changed_title", "語言已變更"),
                 self.config_mgr.get_text("ui_dialog_settings_lang_changed_msg",
                                          "語言設定已儲存，重新啟動應用程式後生效。"))
         super().accept()

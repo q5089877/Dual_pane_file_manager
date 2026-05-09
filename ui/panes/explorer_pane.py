@@ -440,6 +440,10 @@ class FolderFilterProxyModel(QSortFilterProxyModel):
         elif col == 1:
             if hasattr(model, 'size'):
                 return model.size(left) < model.size(right)
+        elif col == 2:
+            l_ext = model.fileInfo(left).suffix().lower()
+            r_ext = model.fileInfo(right).suffix().lower()
+            return l_ext < r_ext
 
         return super().lessThan(left, right)
 
@@ -823,12 +827,13 @@ class ExplorerPane(QWidget):
         header.setSectionResizeMode(
             0, QHeaderView.ResizeMode.Interactive)  # 改為可互動調整，不再固定延伸
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
 
-        self.tree.setColumnWidth(0, 350)  # 設定名稱欄初始寬度
+        self.tree.setColumnWidth(0, 320)  # 設定名稱欄初始寬度
         self.tree.setColumnWidth(1, 80)
+        self.tree.setColumnWidth(2, 100)
         self.tree.setColumnWidth(3, 140)
-        self.tree.setColumnHidden(2, True)
 
         # QFileSystemModel 非同步載入子目錄內容時觸發 directoryLoaded，導致 rootIndex 失效
         # 連接此信號以在每次非同步載入完成後還原 rootIndex
@@ -1031,9 +1036,7 @@ class ExplorerPane(QWidget):
             # 判定目前路徑是否在 monitored_paths 索引涵蓋範圍內
             config = self.config_mgr.load_config()
             monitored = config.get("monitored_paths", [])
-            default_scan = config.get("default_scan_root", "")
-            all_watched = [p for p in monitored if p] + \
-                ([default_scan] if default_scan else [])
+            all_watched = [p for p in monitored if p]
             curr_norm = os.path.normpath(curr_path).lower()
             trusted = any(
                 curr_norm.startswith(os.path.normpath(w).lower())
@@ -1261,7 +1264,6 @@ class ExplorerPane(QWidget):
                 self.tree.header().setVisible(True)
                 for i in range(1, self.model.columnCount()):
                     self.tree.setColumnHidden(i, False)
-                self.tree.setColumnHidden(2, True)  # Type 欄永遠隱藏
             else:  # icons
                 self.list_view.set_display_mode("icons")
                 self.view_stack.setCurrentWidget(self.list_view)

@@ -319,8 +319,13 @@ class ConfigManager:
             except Exception: pass
         return "A"
 
-    def get_index_path(self):
-        return Path(os.path.dirname(self.config_file)) / "indexes"
+    def get_index_path(self) -> Path:
+        """Always returns AppData indexes path regardless of portable/installed mode."""
+        import sys
+        if sys.platform == "win32":
+            local_appdata = os.environ.get("LOCALAPPDATA", os.path.expanduser("~\\AppData\\Local"))
+            return Path(local_appdata) / "SHL" / self.app_name / "indexes"
+        return Path(os.path.expanduser("~/.config")) / self.app_name / "indexes"
 
     def get_db_settings(self):
         return self.load_config().get("db_settings", {})
@@ -378,8 +383,10 @@ class ConfigManager:
         return {
             "theme_name":            theme.get("themeName", "調光護眼 (預設)"),
             "restore_last_session":  config.get("restore_last_session", True),
-            "remote_index_root":     config.get("remote_index_root", ""),
-            "default_scan_root":     config.get("default_scan_root", ""),
+            "remote_index_root":     config.get(
+                "remote_index_root",
+                r"K:\SHL TECH\_STEC_Staff\Neil\效率提升軟體\K槽檔案尋找資料庫存放區"
+            ),
             "max_depth":             config.get("max_depth", 2),
             "search_limit":          config.get("search_limit", 1000),
             "nightly_scan_hour":     maint.get("nightly_scan_hour", 2),
@@ -393,6 +400,20 @@ class ConfigManager:
             "text_format":           paste.get("text_format", "%Y%m%d_%H%M%S"),
             "language":              config.get("language", "zh_TW"),
         }
+
+    # ── Favorites ─────────────────────────────────────────────────────────────
+
+    def get_favorites(self) -> list[dict]:
+        return self.load_config().get("favorites", [])
+
+    def save_favorites(self, favorites: list[dict]) -> None:
+        config = self.load_config()
+        config["favorites"] = favorites
+        try:
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
 
     # ── Snapshots ─────────────────────────────────────────────────────────────
 
@@ -509,7 +530,7 @@ class ConfigManager:
 
     def save_app_settings(self, settings: dict) -> bool:
         config = self.load_config()
-        top_level_keys = ["restore_last_session", "remote_index_root", "default_scan_root", "max_depth", "search_limit", "pdf_preview_max_pages", "confirm_before_delete", "preview_font_size", "is_master_node", "monitored_paths", "language"]
+        top_level_keys = ["restore_last_session", "remote_index_root", "max_depth", "search_limit", "pdf_preview_max_pages", "confirm_before_delete", "preview_font_size", "is_master_node", "monitored_paths", "language"]
         for key in top_level_keys:
             if key in settings: config[key] = settings[key]
         if "nightly_scan_hour" in settings or "nightly_scan_minute" in settings:

@@ -9,7 +9,6 @@ import zipfile
 import re
 import logging
 import xml.etree.ElementTree as ET
-from typing import Callable, Any
 
 logger = logging.getLogger(__name__)
 
@@ -143,8 +142,12 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp",
 PDF_EXTS = {".pdf", ".ai"}
 
 STL_EXTS = {".stl", ".obj", ".ply"}
+SLD_EXTS = {".sldprt", ".slddrw"}
 
 ARCHIVE_EXTS = {".zip", ".7z"}
+
+AUDIO_EXTS = {".mp3", ".flac", ".wav", ".aac", ".ogg", ".m4a", ".wma", ".opus"}
+FONT_EXTS  = {".ttf", ".otf"}
 
 
 # ── renderers ─────────────────────────────────────────────────────────────────
@@ -644,6 +647,216 @@ def render_stl(path: str) -> str:
     return _base_html(meta_html)
 
 
+# ── SolidWorks OLE thumbnail renderer ─────────────────────────────────────────
+
+def render_sldprt(path: str) -> str:
+    """Extract embedded preview thumbnail from SolidWorks OLE container."""
+    import base64
+    name = os.path.basename(path)
+    try:
+        import olefile
+    except ImportError:
+        return _base_html(
+            '<div class="err">需要 olefile 套件 (<code>pip install olefile</code>)</div>')
+
+    STREAM_CANDIDATES = ["PreviewPNG", "PICTURE", "\x05SummaryInformation"]
+    img_b64 = None
+    img_mime = "image/png"
+    try:
+        if not olefile.isOleFile(path):
+            return _base_html(f'<div class="err">{_html_escape(name)}：非有效 OLE 檔案</div>')
+        with olefile.OleFileIO(path) as ole:
+            for stream in STREAM_CANDIDATES:
+                if ole.exists(stream):
+                    data = ole.openstream(stream).read()
+                    for sig, mime in [(b"\x89PNG", "image/png"), (b"\xff\xd8\xff", "image/jpeg"),
+                                      (b"BM", "image/bmp")]:
+                        idx = data.find(sig)
+                        if idx != -1:
+                            img_b64 = base64.b64encode(data[idx:]).decode()
+                            img_mime = mime
+                            break
+                if img_b64:
+                    break
+    except Exception as e:
+        return _base_html(f'<div class="err">讀取失敗：{_html_escape(str(e))}</div>')
+
+    if img_b64:
+        body = f"""<div style="text-align:center; padding:12px 0;">
+  <img src="data:{img_mime};base64,{img_b64}"
+       style="max-width:100%; max-height:460px; border-radius:6px;
+              box-shadow:0 4px 20px rgba(0,0,0,0.4);" />
+</div>
+<div class="info-card" style="margin-top:12px;">
+  <div class="label">檔案</div><div class="value">{_html_escape(name)}</div>
+</div>"""
+    else:
+        body = f"""<div class="info-card">
+  <div style="font-size:36px; text-align:center; margin-bottom:12px;">⚙️</div>
+  <div class="label">檔案</div><div class="value">{_html_escape(name)}</div>
+  <hr>
+  <div class="label" style="color:#888;">此版本未包含嵌入縮圖，請以系統程式開啟。</div>
+</div>"""
+    return _base_html(body)
+
+
+# ── Audio metadata renderer ───────────────────────────────────────────────────
+
+def render_audio(path: str) -> str:
+    """Show audio metadata (tags + technical info) via mutagen; no playback."""
+    name = _html_escape(os.path.basename(path))
+    try:
+        from mutagen import File as _mut_file
+    except ImportError:
+        return _base_html(
+            f'<div class="info-card">'
+            f'<div class="label">檔案</div><div class="value">{name}</div><hr>'
+            f'<div class="label">說明</div>'
+            f'<div class="value" style="color:#888;">需要 mutagen 套件<br>'
+            f'<code>pip install mutagen</code></div></div>')
+    try:
+        audio = _mut_file(path, easy=True)
+        stat  = os.stat(path)
+
+        def tag(key):
+            v = (audio.tags or {}).get(key, [])
+            return _html_escape(", ".join(v)) if v else "—"
+
+        dur = getattr(audio.info, "duration", None)
+        dur_str = f"{int(dur)//60}:{int(dur)%60:02d}" if dur else "—"
+
+        br = getattr(audio.info, "bitrate", None)
+        br_str = f"{br // 1000} kbps" if br else "—"
+
+        sr = getattr(audio.info, "sample_rate", None)
+        sr_str = f"{sr:,} Hz" if sr else "—"
+
+        ch = getattr(audio.info, "channels", None)
+        ch_str = {1: "單聲道", 2: "立體聲"}.get(ch, f"{ch} ch") if ch else "—"
+
+        rows = [
+            ("標題", tag("title")),
+            ("藝術家", tag("artist")),
+            ("專輯", tag("album")),
+            ("年份", tag("date")),
+            ("時長", dur_str),
+            ("位元率", br_str),
+            ("取樣率", sr_str),
+            ("聲道", ch_str),
+            ("大小", _fmt_size(stat.st_size)),
+        ]
+        inner = "<hr>".join(
+            f'<div class="label">{k}</div><div class="value">{v}</div>'
+            for k, v in rows
+        )
+        body = (f'<div style="font-size:36px;text-align:center;padding:16px 0;">🎵</div>'
+                f'<div class="info-card">{inner}</div>')
+    except Exception as e:
+        body = f'<div class="err">讀取失敗：{_html_escape(str(e))}</div>'
+    return _base_html(body)
+
+
+# ── Font preview renderer ──────────────────────────────────────────────────────
+
+def render_font(path: str) -> str:
+    """Preview a TTF/OTF font by embedding it as a base64 @font-face. No extra library needed."""
+    name = os.path.basename(path)
+    ext  = os.path.splitext(name)[1].lower()
+    fmt  = "truetype" if ext == ".ttf" else "opentype"
+    try:
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+    except Exception as e:
+        return _base_html(f'<div class="err">讀取失敗：{_html_escape(str(e))}</div>')
+
+    extra_head = f"""<style>
+@font-face {{
+  font-family: "PreviewFont";
+  src: url("data:font/{fmt};base64,{b64}") format("{fmt}");
+}}
+.fp {{ font-family: "PreviewFont", serif; }}
+.fp-name  {{ font-size: 28px; font-weight: bold; margin-bottom: 16px; }}
+.fp-block {{ margin: 10px 0; line-height: 1.8; color: #cdd6f4; }}
+.fp-sm    {{ font-size: 13px; color: #a6adc8; }}
+</style>"""
+
+    body = f"""<div style="padding:24px 28px;">
+  <div class="fp fp-name">{_html_escape(name)}</div>
+  <div class="fp fp-block" style="font-size:32px;">Aa Bb Cc Dd Ee Ff Gg Hh</div>
+  <div class="fp fp-block" style="font-size:22px;">ABCDEFGHIJKLMNOPQRSTUVWXYZ</div>
+  <div class="fp fp-block" style="font-size:22px;">abcdefghijklmnopqrstuvwxyz</div>
+  <div class="fp fp-block" style="font-size:20px;">0123456789  !@#$%^&amp;*()_+-=[]{{}}|;':",&lt;&gt;?/</div>
+  <div class="fp fp-block fp-sm" style="font-size:14px;">
+    The quick brown fox jumps over the lazy dog.<br>
+    Pack my box with five dozen liquor jugs.
+  </div>
+  <div class="fp fp-block fp-sm" style="font-size:13px;">
+    永遠相信美好的事情即將發生。山川異域，風月同天。
+  </div>
+</div>"""
+    return _base_html(body, extra_head=extra_head)
+
+
+# ── SVG renderer ──────────────────────────────────────────────────────────────
+
+def render_svg(path: str) -> str:
+    """Render SVG as an actual image (base64 data URI) on a dark background."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        b64 = base64.b64encode(data).decode()
+        name = _html_escape(os.path.basename(path))
+        body = f'''<div style="display:flex;flex-direction:column;align-items:center;padding:16px;gap:12px;">
+  <div style="background:#fff;border-radius:6px;padding:12px;max-width:100%;
+              box-shadow:0 4px 20px rgba(0,0,0,0.4);">
+    <img src="data:image/svg+xml;base64,{b64}"
+         style="max-width:100%;max-height:500px;display:block;" />
+  </div>
+  <div class="info-card" style="width:100%;margin-top:4px;">
+    <div class="label">檔案</div><div class="value">{name}</div>
+  </div>
+</div>'''
+    except Exception as e:
+        body = f'<div class="err">SVG 讀取失敗：{_html_escape(str(e))}</div>'
+    return _base_html(body)
+
+
+# ── Markdown renderer ──────────────────────────────────────────────────────────
+
+_MD_HEAD = """<style>
+  .md { padding: 20px 24px; max-width: 820px; margin: 0 auto; }
+  .md h1,.md h2,.md h3 { color: #89b4fa; border-bottom: 1px solid #313244; padding-bottom: 6px; margin: 20px 0 10px; }
+  .md h4,.md h5,.md h6 { color: #cba6f7; margin: 14px 0 6px; }
+  .md a { color: #89dceb; }
+  .md code { background: #313244; border-radius: 4px; padding: 1px 5px; font-family: monospace; font-size: 90%; }
+  .md pre { background: #181825; border-radius: 6px; padding: 12px; overflow-x: auto; }
+  .md pre code { background: none; padding: 0; }
+  .md blockquote { border-left: 3px solid #585b70; margin: 0; padding-left: 14px; color: #a6adc8; }
+  .md table { border-collapse: collapse; width: 100%; }
+  .md th { background: #313244; padding: 6px 10px; text-align: left; }
+  .md td { border-top: 1px solid #313244; padding: 6px 10px; }
+  .md hr { border: none; border-top: 1px solid #313244; margin: 16px 0; }
+  .md img { max-width: 100%; border-radius: 4px; }
+</style>"""
+
+
+def render_markdown(path: str) -> str:
+    """Render Markdown as styled HTML; falls back to syntax-highlighted text if markdown not installed."""
+    try:
+        import markdown as _md
+    except ImportError:
+        return render_text(path)
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        extensions = ["fenced_code", "tables", "nl2br", "sane_lists"]
+        html_body = _md.markdown(text, extensions=extensions)
+        return _base_html(f'<div class="md">{html_body}</div>', extra_head=_MD_HEAD)
+    except Exception as e:
+        logger.warning("render_markdown failed: %s", e)
+        return render_text(path)
+
+
 # ── DXF renderer ──────────────────────────────────────────────────────────────
 
 def render_dxf(path: str) -> str:
@@ -710,6 +923,8 @@ def generate_preview(path: str, pdf_max_pages: int = 3, font_size: int = 13, pdf
         html = render_archive(path)
     elif ext in STL_EXTS:
         html = render_stl(path)
+    elif ext in SLD_EXTS:
+        html = render_sldprt(path)
     elif ext == ".dxf":
         html = render_dxf(path)
     elif ext in {".xlsx", ".xls"}:
@@ -722,6 +937,14 @@ def generate_preview(path: str, pdf_max_pages: int = 3, font_size: int = 13, pdf
         html = render_unsupported_office(path, ext)
     elif ext in {".csv"}:
         html = render_table_csv(path)
+    elif ext in AUDIO_EXTS:
+        html = render_audio(path)
+    elif ext in FONT_EXTS:
+        html = render_font(path)
+    elif ext == ".svg":
+        html = render_svg(path)
+    elif ext in {".md", ".markdown"}:
+        html = render_markdown(path)
     elif ext in TEXT_EXTS:
         html = render_text(path)
     else:

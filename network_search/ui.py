@@ -107,21 +107,16 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
 
-        self.default_root_edit = QLineEdit(
-            self.config.get("default_scan_root", "C:\\"))
-        self.default_root_edit.setPlaceholderText("例如: K:\\")
-        form.addRow("網路硬碟根目錄 (K:\\):", self.default_root_edit)
-
         self.remote_db_edit = QLineEdit(
             self.config.get("remote_index_root", ""))
-        self.remote_db_edit.setPlaceholderText("請選擇 K 槽中的一個資料夾來存放共享索引")
+        self.remote_db_edit.setPlaceholderText("選擇 K: 上用來存放索引資料庫的資料夾")
         
         remote_layout = QHBoxLayout()
         remote_layout.addWidget(self.remote_db_edit)
         remote_btn = QPushButton("瀏覽")
         remote_btn.clicked.connect(self.on_browse_remote)
         remote_layout.addWidget(remote_btn)
-        form.addRow("團隊共享索引路徑:", remote_layout)
+        form.addRow("共享索引資料庫資料夾:", remote_layout)
 
         self.limit_edit = QLineEdit(str(self.config.get("search_limit", 1000)))
         self.limit_edit.setPlaceholderText("預設 1000")
@@ -256,7 +251,6 @@ class SettingsDialog(QDialog):
         paths = [self.path_list.item(i).text()
                  for i in range(self.path_list.count())]
         return {
-            "default_scan_root": self.default_root_edit.text(),
             "remote_index_root": self.remote_db_edit.text(),
             "monitored_paths": paths,
             "search_limit": int(self.limit_edit.text() or 1000),
@@ -536,7 +530,6 @@ class NetworkSearchWindow(QWidget):
                     self.config.get("right_tabs", []),
                     remote_index_root=self.config.get("remote_index_root"),
                     watchlist=self.config.get("monitored_paths"),
-                    default_scan_root=self.config.get("default_scan_root"),
                     max_depth=self.config.get("max_depth", 999),
                     search_limit=self.config.get("search_limit"),
                     is_master_node=self.config.get("is_master_node")

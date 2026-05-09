@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from PyQt6.QtCore import QDate, QThread
 from ui.workers.threads import SearchThread
 from network_search.engine import IndexManager
@@ -88,7 +87,7 @@ class SearchPresenter:
 
     def reload_config(self):
         """Re-initializes the DB connection based on new configuration."""
-        self.db_dir = Path(os.path.dirname(self.config_mgr.config_file)) / "indexes"
+        self.db_dir = self.config_mgr.get_index_path()
         config = self.config_mgr.load_config()
         is_master = config.get("is_master_node", False)
         nas_path = config.get("remote_index_root")
@@ -117,7 +116,8 @@ class SearchPresenter:
             if use_global:
                 search_root = "C:\\"
             elif use_k:
-                search_root = config.get('default_scan_root', conditions['path'])
+                monitored = config.get('monitored_paths') or []
+                search_root = monitored[0] if monitored else conditions['path']
             else:
                 search_root = conditions['path']
             self.active_worker = SearchThread(

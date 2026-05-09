@@ -1,4 +1,8 @@
 import os, datetime, re
+
+def _natural_key(s: str) -> list:
+    """Split string into text/number chunks for human-friendly sorting."""
+    return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', s or "")]
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QMessageBox, QListWidget, QInputDialog,
@@ -38,7 +42,12 @@ class DateSortProxyModel(QSortFilterProxyModel):
             if left_data is None: return True
             if right_data is None: return False
         
-        # Fallback to standard comparison for Name (1), Path (4), etc.
+        # Natural sort for Name (1) — "part_2" before "part_10"
+        if col == 1:
+            l = self.sourceModel().data(left, Qt.ItemDataRole.DisplayRole) or ""
+            r = self.sourceModel().data(right, Qt.ItemDataRole.DisplayRole) or ""
+            return _natural_key(l) < _natural_key(r)
+
         return super().lessThan(left, right)
 
 class SearchDialog(QDialog):
@@ -101,7 +110,8 @@ class SearchDialog(QDialog):
 
         # 範圍切換 (Scope Toggles)
         config = self.presenter.config_mgr.load_config()
-        default_root = config.get("default_scan_root", "C:\\")
+        monitored = config.get("monitored_paths") or []
+        default_root = monitored[0] if monitored else "K:\\"
         
         label_net = self.config_mgr.get_text("ui_dialog_search_network_share", "網路共享 ({})").format(default_root) if self.config_mgr else f"網路共享 ({default_root})"
         self.network_k_cb = QCheckBox(label_net)
@@ -297,7 +307,7 @@ class SearchDialog(QDialog):
         header_view.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
         header_view.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
         
-        self.tree.setColumnWidth(0, 30)
+        self.tree.setColumnWidth(0, 42)
         self.tree.setColumnWidth(1, 300)
         self.tree.setColumnWidth(2, 150)
         self.tree.setColumnWidth(3, 80)
@@ -772,13 +782,13 @@ class SearchDialog(QDialog):
                     config.get("right_tabs", []),
                     remote_index_root=config.get("remote_index_root"),
                     watchlist=config.get("monitored_paths"),
-                    default_scan_root=config.get("default_scan_root"),
                     max_depth=config.get("max_depth"),
                     search_limit=config.get("search_limit"),
                     is_master_node=is_m
                 )
                 label_net_prefix = self.config_mgr.get_text("ui_dialog_search_network_share", "網路共享 ({})") if self.config_mgr else "網路共享 ({})"
-                self.network_k_cb.setText(label_net_prefix.format(config.get('default_scan_root', 'K:\\')))
+                _mon = config.get('monitored_paths') or []
+                self.network_k_cb.setText(label_net_prefix.format(_mon[0] if _mon else 'K:\\'))
                 self._update_search_mgr()
         except Exception as e:
             err_title = self.config_mgr.get_text("ui_dialog_common_error", "錯誤") if self.config_mgr else "錯誤"
