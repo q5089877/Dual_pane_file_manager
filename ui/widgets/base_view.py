@@ -103,6 +103,21 @@ class BaseFileView:
         if op_pairs:
             self.perform_operation(op_pairs, "move")
 
+    def open_batch_rename_dialog(self):
+        """開啟批次重新命名對話框，確認後透過 perform_operation 執行。"""
+        idxs = self.selectionModel().selectedRows()
+        if not idxs:
+            return
+        src_paths = [p for p in (self.get_file_path(i) for i in idxs) if p]
+        if not src_paths:
+            return
+        from ui.widgets.dialogs import BatchRenameDialog
+        dlg = BatchRenameDialog(src_paths, config_mgr=getattr(self, '_cm', None), parent=self)
+        if dlg.exec() == BatchRenameDialog.DialogCode.Accepted:
+            op_pairs = dlg.get_op_pairs()
+            if op_pairs:
+                self.perform_operation(op_pairs, "move")
+
     def check_and_perform(self, src_paths, dest_path, mode):
         dest_path = os.path.normpath(dest_path)
         src_paths = [os.path.normpath(p) for p in src_paths]

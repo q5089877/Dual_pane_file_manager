@@ -1,6 +1,7 @@
 import os
 import shutil
 import ctypes
+import time as _time
 from ctypes import wintypes
 
 
@@ -8,6 +9,23 @@ try:
     import send2trash
 except ImportError:
     send2trash = None
+
+
+_CLOUD_CACHE: dict[str, tuple[bool, float]] = {}
+_CLOUD_CACHE_TTL = 5.0
+_ONEDRIVE_ROOTS: list[str] = []
+
+
+def _get_onedrive_roots() -> list[str]:
+    global _ONEDRIVE_ROOTS
+    if not _ONEDRIVE_ROOTS:
+        roots = []
+        for key in ("OneDrive", "OneDriveConsumer", "OneDriveCommercial"):
+            val = os.environ.get(key)
+            if val:
+                roots.append(os.path.normcase(val))
+        _ONEDRIVE_ROOTS = roots
+    return _ONEDRIVE_ROOTS
 
 
 class FileOps:
@@ -42,6 +60,23 @@ class FileOps:
             return is_offline or is_recall or is_recall_open or is_unpinned or (is_sparse and is_reparse)
         except Exception:
             return False
+
+    @staticmethod
+    def is_cloud_only(path: str) -> bool:
+        """True if path is inside an OneDrive folder AND not downloaded locally. Cached with 5 s TTL."""
+        roots = _get_onedrive_roots()
+        if not roots:
+            return False
+        nc = os.path.normcase(path)
+        if not any(nc.startswith(r) for r in roots):
+            return False
+        now = _time.monotonic()
+        cached = _CLOUD_CACHE.get(path)
+        if cached and (now - cached[1]) < _CLOUD_CACHE_TTL:
+            return cached[0]
+        result = FileOps.is_offline_cloud_file(path)
+        _CLOUD_CACHE[path] = (result, now)
+        return result
 
     @staticmethod
     def get_timestamp_suffix_name(src_path: str) -> str:

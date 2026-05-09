@@ -287,20 +287,20 @@ class AppSettingsDialog(QDialog):
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_preview_font", "預覽字體大小："),
                  self._preview_font_spin)
 
+        # PDF 預覽頁數
+        self._pdf_pages_spin = QSpinBox()
+        self._pdf_pages_spin.setRange(1, 20)
+        self._pdf_pages_spin.setValue(s.get("pdf_preview_max_pages", 3))
+        self._pdf_pages_spin.setSuffix(self.config_mgr.get_text("ui_dialog_settings_pdf_pages_suffix", " 頁"))
+        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_pdf_pages", "PDF 預覽頁數："),
+                 self._pdf_pages_spin)
+
         # 刪除防呆
         self._confirm_delete_chk = QCheckBox(
             self.config_mgr.get_text("ui_dialog_settings_confirm_delete", "刪除檔案前顯示確認視窗"))
         self._confirm_delete_chk.setChecked(s.get("confirm_before_delete", True))
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_delete", "刪除防呆："),
                  self._confirm_delete_chk)
-
-        # AI 匯出排除目錄
-        ai_s = self._config_mgr.get_ai_exporter_settings()
-        self._ai_exclude_edit = QLineEdit(", ".join(ai_s.get("blacklist_dirs", [])))
-        self._ai_exclude_edit.setPlaceholderText(
-            self.config_mgr.get_text("ui_dialog_settings_ai_exclude_placeholder", "例如: node_modules, .git"))
-        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_ai_exclude", "AI 匯出排除目錄："),
-                 self._ai_exclude_edit)
 
         f.addRow(self._separator())
         f.addRow(self._muted_label(
@@ -390,6 +390,7 @@ class AppSettingsDialog(QDialog):
             "nightly_scan_hour":     self._hour_spin.value(),
             "nightly_scan_minute":   self._min_spin.value(),
             "preview_font_size":     self._preview_font_spin.value(),
+            "pdf_preview_max_pages": self._pdf_pages_spin.value(),
             "confirm_before_delete": self._confirm_delete_chk.isChecked(),
             "image_prefix":          self._img_prefix_edit.text().strip(),
             "text_prefix":           self._txt_prefix_edit.text().strip(),
@@ -397,7 +398,6 @@ class AppSettingsDialog(QDialog):
             "text_format":           self._txt_format_edit.text().strip(),
             "is_master_node":        self._is_master_chk.isChecked(),
             "monitored_paths":       m_paths,
-            "ai_blacklist_dirs":     [d.strip() for d in self._ai_exclude_edit.text().split(",") if d.strip()],
             "language":              self._lang_options[self._lang_combo.currentIndex()][1],
         })
         self.theme_changed.emit()

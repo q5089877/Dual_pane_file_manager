@@ -7,8 +7,9 @@ Renders each file as:
 """
 import os
 from PyQt6.QtWidgets import QStyledItemDelegate, QStyle, QApplication, QFileIconProvider
-from PyQt6.QtCore import Qt, QRect, QSize, QFileInfo
+from PyQt6.QtCore import Qt, QRect, QSize, QFileInfo, QPoint
 from PyQt6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen, QBrush
+from core.file_ops import FileOps
 
 
 class ThumbnailDelegate(QStyledItemDelegate):
@@ -103,6 +104,16 @@ class ThumbnailDelegate(QStyledItemDelegate):
             px = thumb_rect.left() + (self.THUMB_W - icon_size.width()) // 2
             py = thumb_rect.top() + (self.THUMB_H - icon_size.height()) // 2
             icon.paint(painter, px, py, icon_size.width(), icon_size.height())
+
+        if path and FileOps.is_cloud_only(path):
+            r = max(4, thumb_rect.height() // 14)
+            cx = thumb_rect.right() - r - 3
+            cy = thumb_rect.bottom() - r - 3
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255))
+            painter.drawEllipse(QPoint(cx, cy), r + 1, r + 1)
+            painter.setBrush(QColor(0, 120, 212))
+            painter.drawEllipse(QPoint(cx, cy), r, r)
 
         # --- Filename label ---
         name = os.path.basename(path) if path else index.data(Qt.ItemDataRole.DisplayRole) or ""

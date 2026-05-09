@@ -1,4 +1,5 @@
-import os, re
+import os
+import re
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QSplitter,
     QMessageBox, QTabBar, QFileDialog, QMenu, QLabel, QDialog,
@@ -16,21 +17,21 @@ from core.interfaces import IMainWindowView
 from ui.presenters.main_window_presenter import MainWindowPresenter
 from core.system_utils import is_computer_locked
 
-from ui.presenters.ai_exporter_presenter import AIExporterPresenter
-from ui.widgets.dialogs import AIExporterProgressDialog
-
 
 class _TrashDropButton(QToolButton):
     """狀態列左側垃圾桶：點擊刪除選取項目，或拖放檔案到此送入回收筒。"""
+
     def __init__(self, config_mgr=None, parent=None):
         super().__init__(parent)
         self.config_mgr = config_mgr
-        icon_path = self.config_mgr.get_ui_resource_path("trash") if self.config_mgr else "ui/trash.svg"
+        icon_path = self.config_mgr.get_ui_resource_path(
+            "trash") if self.config_mgr else "ui/trash.svg"
         self.setIcon(QIcon(icon_path))
         self.setIconSize(QSize(18, 18))
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.setObjectName("trashDropBtn")
-        tip = self.config_mgr.get_text("ui_main_trash_tooltip", "點擊刪除選取項目（Del）\n拖放檔案到此處 → 移至回收筒") if self.config_mgr else "點擊刪除選取項目（Del）\n拖放檔案到此處 → 移至回收筒"
+        tip = self.config_mgr.get_text(
+            "ui_main_trash_tooltip", "點擊刪除選取項目（Del）\n拖放檔案到此處 → 移至回收筒") if self.config_mgr else "點擊刪除選取項目（Del）\n拖放檔案到此處 → 移至回收筒"
         self.setToolTip(tip)
         self.setAcceptDrops(True)
         self.clicked.connect(self._on_click)
@@ -57,13 +58,14 @@ class _TrashDropButton(QToolButton):
 
     def dropEvent(self, event):
         self._set_drag_state(False)
-        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        paths = [u.toLocalFile()
+                 for u in event.mimeData().urls() if u.isLocalFile()]
         if not paths:
             return
 
         from core.file_ops import FileOps
         results = FileOps.delete_paths(paths)
-        done   = [p for p, ok, _ in results if ok]
+        done = [p for p, ok, _ in results if ok]
         errors = [e for _, ok, e in results if not ok]
 
         win = self.window()
@@ -73,16 +75,19 @@ class _TrashDropButton(QToolButton):
             if hasattr(win, "refresh_all_panes"):
                 win.refresh_all_panes()
             if hasattr(win, "set_status_msg"):
-                msg = self.config_mgr.get_text("ui_main_trash_status_success").format(len(done))
+                msg = self.config_mgr.get_text(
+                    "ui_main_trash_status_success").format(len(done))
                 win.set_status_msg(msg, "success")
         if errors and hasattr(win, "set_status_msg"):
-            msg = self.config_mgr.get_text("ui_main_trash_status_error").format(errors[0])
+            msg = self.config_mgr.get_text(
+                "ui_main_trash_status_error").format(errors[0])
             win.set_status_msg(msg, "error")
         event.acceptProposedAction()
 
 
 class _MainWindowViewAdapter(IMainWindowView):
     """Pure adapter: bridges MainWindowPresenter to the Qt MainWindow."""
+
     def __init__(self, window): self.w = window
 
     def get_active_pane_path(self) -> str:
@@ -91,15 +96,18 @@ class _MainWindowViewAdapter(IMainWindowView):
 
     def get_opposite_pane_path(self) -> str:
         p = self.w.active_pane
-        if not p: return ""
-        is_left = any(self.w.left_tabs.widget(i) == p for i in range(self.w.left_tabs.count()))
+        if not p:
+            return ""
+        is_left = any(self.w.left_tabs.widget(i) ==
+                      p for i in range(self.w.left_tabs.count()))
         opp = self.w.right_tabs if is_left else self.w.left_tabs
         pane = opp.currentWidget()
         return pane.path_edit.text() if pane else ""
 
     def get_active_pane_selected_paths(self) -> list:
         p = self.w.active_pane
-        if not p: return []
+        if not p:
+            return []
         return p._get_selected_paths()
 
     def navigate_active_pane(self, path: str):
@@ -108,8 +116,10 @@ class _MainWindowViewAdapter(IMainWindowView):
 
     def navigate_opposite_pane(self, path: str):
         p = self.w.active_pane
-        if not p: return
-        is_left = any(self.w.left_tabs.widget(i) == p for i in range(self.w.left_tabs.count()))
+        if not p:
+            return
+        is_left = any(self.w.left_tabs.widget(i) ==
+                      p for i in range(self.w.left_tabs.count()))
         opp = self.w.right_tabs if is_left else self.w.left_tabs
         pane = opp.currentWidget()
         if pane:
@@ -127,7 +137,8 @@ class _MainWindowViewAdapter(IMainWindowView):
 
     def close_active_tab(self):
         p = self.w.active_pane
-        if not p: return
+        if not p:
+            return
         for tw in [self.w.left_tabs, self.w.right_tabs]:
             for i in range(tw.count()):
                 if tw.widget(i) == p:
@@ -154,7 +165,6 @@ class _MainWindowViewAdapter(IMainWindowView):
             pass
 
 
-
 class MainWindow(QMainWindow):
     """Main application window. Pure View Adapter — all logic delegated to MainWindowPresenter."""
     file_operation_finished = pyqtSignal()
@@ -162,7 +172,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config_mgr = ConfigManager()
-        title = self.config_mgr.get_text("ui_main_window_title", "左右分欄檔案總管 (Dual Pane File Manager)")
+        title = self.config_mgr.get_text(
+            "ui_main_window_title", "左右分欄檔案總管 (Dual Pane File Manager)")
         self.setWindowTitle(title)
         self.resize(1200, 800)
         self.showMaximized()
@@ -183,7 +194,8 @@ class MainWindow(QMainWindow):
         try:
             from network_search.engine import IndexManager
             import os as _os
-            _db_dir = _os.path.join(_os.path.dirname(str(self.config_mgr.config_file)), "indexes")
+            _db_dir = _os.path.join(_os.path.dirname(
+                str(self.config_mgr.config_file)), "indexes")
             self._shared_index_manager = IndexManager(_db_dir, read_only=True)
         except Exception:
             self._shared_index_manager = None
@@ -193,7 +205,8 @@ class MainWindow(QMainWindow):
         self._init_shortcuts()
 
         # Presenter wired after UI exists
-        self.presenter = MainWindowPresenter(_MainWindowViewAdapter(self), self.config_mgr)
+        self.presenter = MainWindowPresenter(
+            _MainWindowViewAdapter(self), self.config_mgr)
         self.file_operation_finished.connect(self._on_file_op_finished)
 
         # Undo stack
@@ -213,8 +226,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(5000, self._start_update_check)
 
     def _on_file_op_finished(self):
-        # Add a 500ms delay before refreshing the UI. 
-        # This gives the OS and QFileSystemWatcher enough time to flush metadata (e.g. file size) 
+        # Add a 500ms delay before refreshing the UI.
+        # This gives the OS and QFileSystemWatcher enough time to flush metadata (e.g. file size)
         # to disk and update QFileSystemModel, preventing the "0 byte" ghost file issue.
         from PyQt6.QtCore import QTimer
         QTimer.singleShot(500, self.refresh_all_panes)
@@ -238,7 +251,8 @@ class MainWindow(QMainWindow):
             tw.setTabsClosable(True)
             tw.setMovable(True)
             tw.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            tw.customContextMenuRequested.connect(lambda pos, t=tw: self.on_tab_context(t, pos))
+            tw.customContextMenuRequested.connect(
+                lambda pos, t=tw: self.on_tab_context(t, pos))
             tw.tabCloseRequested.connect(
                 lambda idx, t=tw: self.close_tab(t, idx))
             tw.currentChanged.connect(self.on_tab_changed)
@@ -248,7 +262,8 @@ class MainWindow(QMainWindow):
             add_btn = QToolButton()
             add_btn.setText("+")
             add_btn.setObjectName("addTabBtn")
-            add_btn.setToolTip(self.config_mgr.get_text("ui_main_action_new_tab", "新增分頁"))
+            add_btn.setToolTip(self.config_mgr.get_text(
+                "ui_main_action_new_tab", "新增分頁"))
             add_btn.clicked.connect(lambda checked, t=tw: self.add_new_tab(t))
             tw.setCornerWidget(add_btn, Qt.Corner.TopRightCorner)
             self.splitter.addWidget(tw)
@@ -260,7 +275,8 @@ class MainWindow(QMainWindow):
 
         # 兩側同路徑提示條
         from PyQt6.QtWidgets import QLabel
-        self.same_path_bar = QLabel(self.config_mgr.get_text("ui_main_same_path_warning", "⚠ 兩側顯示相同資料夾"))
+        self.same_path_bar = QLabel(self.config_mgr.get_text(
+            "ui_main_same_path_warning", "⚠ 兩側顯示相同資料夾"))
         self.same_path_bar.setObjectName("samePathWarning")
         self.same_path_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.same_path_bar.setFixedHeight(24)
@@ -313,10 +329,18 @@ class MainWindow(QMainWindow):
                   self).activated.connect(self.on_alt_right)
 
         # 搜尋與復原
-        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self.on_advanced_search_clicked)
-        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self.undo_last)
+        QShortcut(QKeySequence("Ctrl+F"),
+                  self).activated.connect(self.on_advanced_search_clicked)
+        QShortcut(QKeySequence("Ctrl+Z"),
+                  self).activated.connect(self.undo_last)
+
+    _MAX_TABS = 5
 
     def add_new_tab(self, tab_widget, path=None):
+        if tab_widget.count() >= self._MAX_TABS:
+            self.show_toast(self.config_mgr.get_text(
+                "ui_main_toast_tab_limit", "最多 5 個分頁"), "warning")
+            return
         from ui.presenters.explorer_presenter import HOME_PATH
         if path != HOME_PATH and (not path or not os.path.exists(path)):
             path = QStandardPaths.writableLocation(
@@ -332,7 +356,8 @@ class MainWindow(QMainWindow):
         pane.home_requested.connect(lambda p=pane: p.set_path(HOME_PATH))
         pane.custom_paths_requested.connect(self._show_pane_custom_paths_popup)
 
-        tab_label = self.config_mgr.get_text("ui_pane_label_home", "本機") if path == HOME_PATH else (os.path.basename(path) or path or self.config_mgr.get_text("ui_pane_label_home", "本機"))
+        tab_label = self.config_mgr.get_text("ui_pane_label_home", "本機") if path == HOME_PATH else (
+            os.path.basename(path) or path or self.config_mgr.get_text("ui_pane_label_home", "本機"))
         idx = tab_widget.addTab(pane, tab_label)
         tab_widget.setCurrentIndex(idx)
         if not self.active_pane:
@@ -347,32 +372,37 @@ class MainWindow(QMainWindow):
     def show_tab_context(self, tw, pos):
         """分頁右鍵選單處理"""
         idx = tw.tabBar().tabAt(pos)
-        if idx == -1: return
-        
+        if idx == -1:
+            return
+
         pane = tw.widget(idx)
         path = pane.path_edit.text() if pane else ""
-        
+
         menu = QMenu(self)
-        close_txt = self.config_mgr.get_text("ui_main_action_close_tab", "關閉分頁") if self.config_mgr else "關閉分頁"
+        close_txt = self.config_mgr.get_text(
+            "ui_main_action_close_tab", "關閉分頁") if self.config_mgr else "關閉分頁"
         close_act = menu.addAction(close_txt)
         close_act.setEnabled(tw.count() > 1)
         close_act.triggered.connect(lambda: self.close_tab(tw, idx))
-        
-        add_txt = self.config_mgr.get_text("ui_main_action_new_tab", "新增分頁") if self.config_mgr else "新增分頁"
+
+        add_txt = self.config_mgr.get_text(
+            "ui_main_action_new_tab", "新增分頁") if self.config_mgr else "新增分頁"
         menu.addAction(add_txt).triggered.connect(lambda: self.add_new_tab(tw))
-        
+
         if path and os.path.exists(path):
             menu.addSeparator()
-            bookmark_tpl = self.config_mgr.get_text("ui_main_menu_add_bookmark", "將「{}」新增至書籤") if self.config_mgr else "將「{}」新增至書籤"
+            bookmark_tpl = self.config_mgr.get_text(
+                "ui_main_menu_add_bookmark", "將「{}」新增至書籤") if self.config_mgr else "將「{}」新增至書籤"
             menu.addAction(bookmark_tpl.format(os.path.basename(path) or path)).triggered.connect(
                 lambda: self.on_quick_add_path(path)
             )
             menu.addSeparator()
-            tree_txt = self.config_mgr.get_text("ui_main_menu_gen_tree", "生成目錄結構 (複製到剪貼簿)") if self.config_mgr else "生成目錄結構 (複製到剪貼簿)"
+            tree_txt = self.config_mgr.get_text(
+                "ui_ctx_export_tree", "輸出資料夾樹狀圖") if self.config_mgr else "輸出資料夾樹狀圖"
             menu.addAction(tree_txt).triggered.connect(
-                lambda: self.on_export_ai_context(path, include_contents=False)
+                lambda: self.on_export_folder_tree(path)
             )
-        
+
         menu.exec(tw.tabBar().mapToGlobal(pos))
 
     def close_tab(self, tw, idx):
@@ -382,8 +412,10 @@ class MainWindow(QMainWindow):
             self.save_config()
             self.update_tab_ui()
         else:
-            info_title = self.config_mgr.get_text("ui_dialog_info_title", "資訊") if self.config_mgr else "資訊"
-            info_msg = self.config_mgr.get_text("ui_main_msg_keep_one_tab", "至少需保留一個分頁") if self.config_mgr else "至少需保留一個分頁"
+            info_title = self.config_mgr.get_text(
+                "ui_dialog_info_title", "資訊") if self.config_mgr else "資訊"
+            info_msg = self.config_mgr.get_text(
+                "ui_main_msg_keep_one_tab", "至少需保留一個分頁") if self.config_mgr else "至少需保留一個分頁"
             QMessageBox.information(self, info_title, info_msg)
 
     def update_tab_ui(self):
@@ -393,8 +425,10 @@ class MainWindow(QMainWindow):
                 p = tw.widget(i)
                 path = p._current_path
                 if path == HOME_PATH or not path:
-                    tw.setTabText(i, self.config_mgr.get_text("ui_pane_label_home", "本機"))
-                    tw.setTabToolTip(i, self.config_mgr.get_text("ui_pane_tooltip_home_view", "此電腦"))
+                    tw.setTabText(i, self.config_mgr.get_text(
+                        "ui_pane_label_home", "本機"))
+                    tw.setTabToolTip(i, self.config_mgr.get_text(
+                        "ui_pane_tooltip_home_view", "此電腦"))
                 else:
                     parts = path.replace("\\", "/").rstrip("/").split("/")
                     label = parts[-1] if parts else path
@@ -441,27 +475,29 @@ class MainWindow(QMainWindow):
         locked = is_computer_locked()
         if hasattr(self, "presenter"):
             self.presenter.on_system_tick(locked)
-        
-
 
     def _start_idle_c_scan(self):
         if self.idle_scanner_worker and getattr(self.idle_scanner_worker, "isRunning", lambda: False)():
             return
-            
+
         local_drives = self.config_mgr.get_fixed_drives()
-        if not local_drives: return
-        
-        configs_c = [(os.path.normpath(p), 99) for p in local_drives if os.path.exists(p)]
-        if not configs_c: return
-        
+        if not local_drives:
+            return
+
+        configs_c = [(os.path.normpath(p), 99)
+                     for p in local_drives if os.path.exists(p)]
+        if not configs_c:
+            return
+
         from network_search.engine import ScannerWorker, IndexManager
-        db_dir = os.path.join(os.path.dirname(self.config_mgr.config_file), "indexes")
-        
+        db_dir = os.path.join(os.path.dirname(
+            self.config_mgr.config_file), "indexes")
+
         # 建立專屬的 IndexManager 實例
         idx_mgr = IndexManager(db_dir, read_only=False)
         self.idle_scanner_worker = ScannerWorker(
-            configs_c, 
-            idx_mgr, 
+            configs_c,
+            idx_mgr,
             target_db="personal",
             exclude_dirs=self.config.get("exclude_dirs", [])
         )
@@ -483,22 +519,26 @@ class MainWindow(QMainWindow):
             return
 
         monitored = self.config.get("monitored_paths", [])
-        if not monitored: return
+        if not monitored:
+            return
 
-        configs_k = [(os.path.normpath(p), self.config.get("max_depth", 7)) for p in monitored if os.path.exists(p)]
-        if not configs_k: return
+        configs_k = [(os.path.normpath(p), self.config.get("max_depth", 7))
+                     for p in monitored if os.path.exists(p)]
+        if not configs_k:
+            return
 
         from network_search.engine import ScannerWorker, IndexManager
-        db_dir = os.path.join(os.path.dirname(self.config_mgr.config_file), "indexes")
+        db_dir = os.path.join(os.path.dirname(
+            self.config_mgr.config_file), "indexes")
         remote_dir = self.config.get("remote_index_root")
-        
+
         # 建立獨立的 IndexManager 處理 K 槽更新，隨後會自動拋送(Publish)給所有 Consumer
         idx_mgr = IndexManager(db_dir, read_only=False)
         self.nightly_scanner_worker = ScannerWorker(
-            configs_k, 
+            configs_k,
             idx_mgr,
             remote_db_dir=remote_dir,
-            target_db="local" # writes to local master.db, then publishes copy to remote
+            target_db="local"  # writes to local master.db, then publishes copy to remote
         )
         self.nightly_scanner_worker.start()
 
@@ -516,16 +556,18 @@ class MainWindow(QMainWindow):
         for child in self.findChildren((QDialog, ExplorerPane)):
             try:
                 child.close()
-            except: pass
-            
+            except:
+                pass
+
         if hasattr(self, "_system_timer"):
             self._system_timer.stop()
-            
+
         self.presenter.save_session()
         super().closeEvent(event)
 
     def create_toolbars(self):
-        self.tool_bar = self.addToolBar(self.config_mgr.get_text("ui_main_toolbar_label", "工具列"))
+        self.tool_bar = self.addToolBar(
+            self.config_mgr.get_text("ui_main_toolbar_label", "工具列"))
         self.tool_bar.actionTriggered.connect(
             lambda: self._preview_target_pane and self.close_inline_preview())
         self.tool_bar.setMovable(False)
@@ -535,8 +577,10 @@ class MainWindow(QMainWindow):
         self.pin_popup = PinPopup(self, self)
 
         # 工具列右鍵功能
-        self.tool_bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tool_bar.customContextMenuRequested.connect(self.on_toolbar_context)
+        self.tool_bar.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tool_bar.customContextMenuRequested.connect(
+            self.on_toolbar_context)
 
         # 狀態列：左側垃圾桶（拖放送回收筒）
         self.trash_drop_btn = _TrashDropButton(self.config_mgr, self)
@@ -548,7 +592,8 @@ class MainWindow(QMainWindow):
         self.msg_label.setObjectName("msgLabel")
         self.msg_label.setTextFormat(Qt.TextFormat.RichText)
         self.msg_label.setFont(QApplication.font())
-        tip_msg = self.config_mgr.get_text("ui_main_status_tip", "💡 [F2] 改名  [Alt+F2] 時間戳記  [F3/X] 移動  [F4/C] 複製  [F5] 重整  [F6] 副本  [F7] 新資料夾  [Space] 預覽  [Tab] 切換  [`] 切換分欄  [Ctrl+F] 搜尋")
+        tip_msg = self.config_mgr.get_text(
+            "ui_main_status_tip", "💡 [F2] 改名  [Alt+F2] 時間戳記  [F3/X] 移動  [F4/C] 複製  [F5] 重整  [F6] 副本  [F7] 新資料夾  [Space] 預覽  [Tab] 切換  [`] 切換分欄  [Ctrl+F] 搜尋")
         self.set_status_msg(tip_msg, "tip")
         self.statusBar().addWidget(self.msg_label, 1)
 
@@ -560,7 +605,8 @@ class MainWindow(QMainWindow):
         # 狀態列：更新按鈕 (預設隱藏)
         self.update_btn = QToolButton()
         self.update_btn.setObjectName("updateBtn")
-        self.update_btn.setStyleSheet("color: #57B77F; font-weight: bold; border: 1px solid #57B77F; border-radius: 4px; padding: 2px 8px;")
+        self.update_btn.setStyleSheet(
+            "color: #57B77F; font-weight: bold; border: 1px solid #57B77F; border-radius: 4px; padding: 2px 8px;")
         self.update_btn.hide()
         self.statusBar().addPermanentWidget(self.update_btn)
 
@@ -572,14 +618,18 @@ class MainWindow(QMainWindow):
             tpl = self.config_mgr.get_text("ui_main_pinned_count", "已釘選 ({})")
             pin_label = tpl.format(len(pins))
         else:
-            pin_label = self.config_mgr.get_text("ui_main_pinned_label", "釘選項目")
+            pin_label = self.config_mgr.get_text(
+                "ui_main_pinned_label", "釘選項目")
 
         self.pin_btn = PinDropButton(self)
         self.pin_btn.setText(pin_label)
-        from PyQt6.QtGui import QIcon # Local hardened import
-        self.pin_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("pin")))
-        self.pin_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.pin_btn.setToolTip(self.config_mgr.get_text("ui_main_pinned_tooltip", "已釘選的檔案 / 資料夾（Ctrl+D 釘選 / 拖曳至此快速釘選）"))
+        from PyQt6.QtGui import QIcon  # Local hardened import
+        self.pin_btn.setIcon(
+            QIcon(self.config_mgr.get_ui_resource_path("pin")))
+        self.pin_btn.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.pin_btn.setToolTip(self.config_mgr.get_text(
+            "ui_main_pinned_tooltip", "已釘選的檔案 / 資料夾（Ctrl+D 釘選 / 拖曳至此快速釘選）"))
         self.pin_btn.setObjectName("pinBtn")
         self.pin_btn.clicked.connect(self._show_pin_menu)
         self.tool_bar.addWidget(self.pin_btn)
@@ -588,10 +638,13 @@ class MainWindow(QMainWindow):
 
         # ── 群組 3：進階功能（低頻）──────────────────────────
         snap_btn = QToolButton()
-        snap_btn.setText(self.config_mgr.get_text("ui_main_btn_snapshot", "情境快照"))
+        snap_btn.setText(self.config_mgr.get_text(
+            "ui_main_btn_snapshot", "情境快照"))
         snap_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("camera")))
-        snap_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        snap_btn.setToolTip(self.config_mgr.get_text("ui_main_btn_snapshot_tooltip", "儲存 / 還原兩欄分頁的情境快照"))
+        snap_btn.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        snap_btn.setToolTip(self.config_mgr.get_text(
+            "ui_main_btn_snapshot_tooltip", "儲存 / 還原兩欄分頁的情境快照"))
         snap_btn.setObjectName("snapshotBtn")
         snap_btn.clicked.connect(self._show_snapshot_menu)
         self.tool_bar.addWidget(snap_btn)
@@ -601,13 +654,17 @@ class MainWindow(QMainWindow):
         # ── 設定按鈕 ───────────────────────────────────────────
         from PyQt6.QtWidgets import QStyle
         settings_btn = QToolButton()
-        settings_btn.setText(self.config_mgr.get_text("ui_main_btn_settings", "設定"))
+        settings_btn.setText(self.config_mgr.get_text(
+            "ui_main_btn_settings", "設定"))
         settings_icon = QIcon(self.config_mgr.get_ui_resource_path("settings"))
         if settings_icon.isNull():
-            settings_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+            settings_icon = self.style().standardIcon(
+                QStyle.StandardPixmap.SP_FileDialogDetailedView)
         settings_btn.setIcon(settings_icon)
-        settings_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        settings_btn.setToolTip(self.config_mgr.get_text("ui_main_btn_settings_tooltip", "開啟應用程式設定"))
+        settings_btn.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        settings_btn.setToolTip(self.config_mgr.get_text(
+            "ui_main_btn_settings_tooltip", "開啟應用程式設定"))
         settings_btn.setObjectName("settingsBtn")
         settings_btn.clicked.connect(self.on_settings_clicked)
         self.tool_bar.addWidget(settings_btn)
@@ -622,12 +679,13 @@ class MainWindow(QMainWindow):
         dlg = AppSettingsDialog(self.config_mgr, self)
         dlg.theme_changed.connect(self._reload_stylesheet)
         result = dlg.exec()
-        
+
         # 不管是 Save 還是 Cancel，關閉視窗後強制同步一次當前的 Theme，解決視覺殘留
         self._reload_stylesheet()
-        
+
         if result == QDialog.DialogCode.Accepted:
-            self.show_toast(self.config_mgr.get_text("ui_main_toast_settings_saved", "設定已儲存"), "success")
+            self.show_toast(self.config_mgr.get_text(
+                "ui_main_toast_settings_saved", "設定已儲存"), "success")
 
     def _reload_stylesheet(self) -> None:
         from PyQt6.QtWidgets import QApplication
@@ -639,15 +697,16 @@ class MainWindow(QMainWindow):
         if self.active_pane:
             self.active_pane.open_advanced_search()
         else:
-            QMessageBox.warning(self, self.config_mgr.get_text("ui_main_warn_title", "警告"), self.config_mgr.get_text("ui_main_warn_select_pane", "請先點擊選取一個分頁"))
+            QMessageBox.warning(self, self.config_mgr.get_text(
+                "ui_main_warn_title", "警告"), self.config_mgr.get_text("ui_main_warn_select_pane", "請先點擊選取一個分頁"))
 
     def on_quick_access_clicked(self, path):
         if self.active_pane:
             self.active_pane.set_path(path)
 
-
     def on_add_custom_path(self):
-        p = QFileDialog.getExistingDirectory(self, self.config_mgr.get_text("ui_main_dialog_new_folder", "新增資料夾"))
+        p = QFileDialog.getExistingDirectory(
+            self, self.config_mgr.get_text("ui_main_dialog_new_folder", "新增資料夾"))
         if p and p not in self.custom_paths:
             self.custom_paths.append(p)
             self.refresh_toolbar()
@@ -667,31 +726,36 @@ class MainWindow(QMainWindow):
         from ui.widgets.popups import PinNoteDialog
         if self.config_mgr.is_pinned(path):
             self.config_mgr.remove_pin(path)
-            msg = self.config_mgr.get_text("ui_main_toast_unpinned", "已解除釘選：{}").format(os.path.basename(path) or path)
+            msg = self.config_mgr.get_text("ui_main_toast_unpinned", "已解除釘選：{}").format(
+                os.path.basename(path) or path)
             self.show_toast(msg, "info")
         else:
             dlg = PinNoteDialog(os.path.basename(path) or path, self)
             if dlg.exec() == PinNoteDialog.DialogCode.Rejected:
                 return
             self.config_mgr.add_pin(path, os.path.isdir(path), dlg.note())
-            msg = self.config_mgr.get_text("ui_main_toast_pinned", "已釘選：{}").format(os.path.basename(path) or path)
+            msg = self.config_mgr.get_text("ui_main_toast_pinned", "已釘選：{}").format(
+                os.path.basename(path) or path)
             self.show_toast(msg, "success")
         self.refresh_toolbar()
 
     def add_pin_silent(self, path: str):
         """Pin a path without prompting for a note. Used by drag-and-drop."""
         if self.config_mgr.is_pinned(path):
-            msg = self.config_mgr.get_text("ui_main_toast_pinned", "已釘選：{}").format(os.path.basename(path) or path)
+            msg = self.config_mgr.get_text("ui_main_toast_pinned", "已釘選：{}").format(
+                os.path.basename(path) or path)
             self.show_toast(msg, "info")
             return
         self.config_mgr.add_pin(path, os.path.isdir(path))
-        msg = self.config_mgr.get_text("ui_main_toast_pinned_with_note", "已釘選：{}（右鍵可加備忘）").format(os.path.basename(path) or path)
+        msg = self.config_mgr.get_text("ui_main_toast_pinned_with_note", "已釘選：{}（右鍵可加備忘）").format(
+            os.path.basename(path) or path)
         self.show_toast(msg, "success")
         self.refresh_toolbar()
 
     def set_pin_important(self, path: str, important: bool):
         self.config_mgr.set_pin_important(path, important)
-        label = self.config_mgr.get_text("ui_main_pinned_important", "已標為重要（永久保留）") if important else self.config_mgr.get_text("ui_main_pinned_unimportant", "已取消重要標記")
+        label = self.config_mgr.get_text("ui_main_pinned_important", "已標為重要（永久保留）") if important else self.config_mgr.get_text(
+            "ui_main_pinned_unimportant", "已取消重要標記")
         self.show_toast(label, "success" if important else "info")
         self.refresh_toolbar()
 
@@ -699,8 +763,10 @@ class MainWindow(QMainWindow):
         """Edit the note of an existing pin."""
         from ui.widgets.popups import PinNoteDialog
         pins = self.config_mgr.get_pins()
-        current_note = next((p.get("note", "") for p in pins if p["path"] == path), "")
-        dlg = PinNoteDialog(os.path.basename(path) or path, self, timeout_sec=0)
+        current_note = next((p.get("note", "")
+                            for p in pins if p["path"] == path), "")
+        dlg = PinNoteDialog(os.path.basename(
+            path) or path, self, timeout_sec=0)
         dlg._edit.setText(current_note)
         dlg._edit.selectAll()
         note = dlg.note() if dlg.exec() == PinNoteDialog.DialogCode.Accepted else None
@@ -770,26 +836,33 @@ class MainWindow(QMainWindow):
 
     def _on_update_available(self, version: str, download_url: str):
         """當 GitHub 有新版本時，在狀態列顯示更新按鈕。"""
-        msg = self.config_mgr.get_text("ui_update_found", "🚀 新版本 {v} 已發布！").format(v=version)
+        msg = self.config_mgr.get_text(
+            "ui_update_found", "🚀 新版本 {v} 已發布！").format(v=version)
         self.set_status_msg(msg, "success")
 
         btn_text = self.config_mgr.get_text("ui_update_now", "立即更新")
         self.update_btn.setText(btn_text)
         self.update_btn.show()
 
-        try: self.update_btn.clicked.disconnect()
-        except: pass
-        self.update_btn.clicked.connect(lambda: self._trigger_update(download_url))
+        try:
+            self.update_btn.clicked.disconnect()
+        except:
+            pass
+        self.update_btn.clicked.connect(
+            lambda: self._trigger_update(download_url))
 
     def _trigger_update(self, download_url: str):
         """下載新版 zip，寫入更新腳本後關閉程式。"""
-        import sys, subprocess, os
+        import sys
+        import subprocess
+        import os
         from ui.workers.update_manager import DownloadUpdateWorker, write_update_script
         from PyQt6.QtWidgets import QProgressDialog, QApplication
         from PyQt6.QtCore import Qt
 
         self.update_btn.setEnabled(False)
-        self.set_status_msg(self.config_mgr.get_text("ui_update_downloading", "正在下載更新…"), "")
+        self.set_status_msg(self.config_mgr.get_text(
+            "ui_update_downloading", "正在下載更新…"), "")
 
         progress_dlg = QProgressDialog(
             self.config_mgr.get_text("ui_update_downloading", "正在下載更新…"),
@@ -816,7 +889,8 @@ class MainWindow(QMainWindow):
 
             bat_path = write_update_script(zip_path, install_dir)
             try:
-                subprocess.Popen([bat_path], creationflags=0x00000010)  # CREATE_NEW_CONSOLE
+                # CREATE_NEW_CONSOLE
+                subprocess.Popen([bat_path], creationflags=0x00000010)
                 QApplication.quit()
                 sys.exit(0)
             except Exception as e:
@@ -866,7 +940,8 @@ class MainWindow(QMainWindow):
         if not target_pane:
             return
 
-        dest_dir = target_pane.model.filePath(target_pane.proxy_model.mapToSource(target_pane.tree.rootIndex()))
+        dest_dir = target_pane.model.filePath(
+            target_pane.proxy_model.mapToSource(target_pane.tree.rootIndex()))
         view = self.active_pane.view_stack.currentWidget()
         proxy = self.active_pane.list_proxy if view is self.active_pane.list_view else self.active_pane.proxy_model
         idxs = view.selectionModel().selectedRows() if hasattr(
@@ -900,7 +975,8 @@ class MainWindow(QMainWindow):
         if not target_pane:
             return
 
-        dest_dir = target_pane.model.filePath(target_pane.proxy_model.mapToSource(target_pane.tree.rootIndex()))
+        dest_dir = target_pane.model.filePath(
+            target_pane.proxy_model.mapToSource(target_pane.tree.rootIndex()))
         view = self.active_pane.view_stack.currentWidget()
         proxy = self.active_pane.list_proxy if view is self.active_pane.list_view else self.active_pane.proxy_model
         idxs = view.selectionModel().selectedRows() if hasattr(
@@ -955,7 +1031,6 @@ class MainWindow(QMainWindow):
             pane.view_stack.currentWidget().setFocus()
             self.set_active_pane(pane)
 
-
     def show_quick_look(self, path):
         """Show the Quick Look preview dialog for the given path."""
         from ui.widgets.quick_look import QuickLookDialog
@@ -990,12 +1065,13 @@ class MainWindow(QMainWindow):
             from ui.widgets.preview_panel import PreviewPanel
             panel = PreviewPanel(self.config_mgr)
             panel.action_requested.connect(self._on_preview_action)
-            
+
             # 連接 ExplorerPane 上的按鈕與 PreviewPanel 的解析度切換
             if hasattr(target, 'quality_toggle_btn'):
-                target.quality_toggle_btn.clicked.connect(panel._toggle_quality)
+                target.quality_toggle_btn.clicked.connect(
+                    panel._toggle_quality)
                 panel.quality_changed.connect(target.update_quality_btn)
-                
+
             target.view_stack.addWidget(panel)
             self._preview_panels[target] = panel
         panel = self._preview_panels[target]
@@ -1005,10 +1081,11 @@ class MainWindow(QMainWindow):
         self._preview_source_view = self._preview_source_pane.view_stack.currentWidget()
         self._preview_source_view.selectionModel().currentChanged.connect(
             self._on_preview_current_changed)
-        self._preview_source_pane.path_changed.connect(self._on_preview_source_path_changed)
+        self._preview_source_pane.path_changed.connect(
+            self._on_preview_source_path_changed)
         self._preview_source_pane.set_previewing_path(path)
         panel.preview_file(path)
-        
+
         from core.preview_worker import PDF_EXTS
         ext = os.path.splitext(path)[1].lower()
         is_pdf = ext in PDF_EXTS
@@ -1036,7 +1113,8 @@ class MainWindow(QMainWindow):
         if self._preview_source_pane is not None:
             self._preview_source_pane.set_previewing_path("")
             try:
-                self._preview_source_pane.path_changed.disconnect(self._on_preview_source_path_changed)
+                self._preview_source_pane.path_changed.disconnect(
+                    self._on_preview_source_path_changed)
             except RuntimeError:
                 pass
         target = self._preview_target_pane
@@ -1050,7 +1128,8 @@ class MainWindow(QMainWindow):
             target.set_preview_mode(False)
             target.set_view_mode(target._current_mode)
             if self.active_pane:
-                self.set_active_pane(self.active_pane)  # restore normal dimming
+                # restore normal dimming
+                self.set_active_pane(self.active_pane)
         finally:
             self.centralWidget().setUpdatesEnabled(True)
 
@@ -1080,14 +1159,15 @@ class MainWindow(QMainWindow):
     def _on_preview_action(self, action: str, path: str) -> None:
         if not path or not os.path.exists(path):
             return
-            
+
         source_pane = self._preview_source_pane
         target_pane = self._preview_target_pane
         if not source_pane or not target_pane:
             return
 
-        is_left = any(self.left_tabs.widget(i) == source_pane for i in range(self.left_tabs.count()))
-        
+        is_left = any(self.left_tabs.widget(i) ==
+                      source_pane for i in range(self.left_tabs.count()))
+
         # [究極 UX 優化]：處理幽靈預覽 (Ghost Preview)
         # 在刪除或提取前，強迫游標跳到下一筆，讓預覽視窗自動更新而不會白屏
         view = source_pane.view_stack.currentWidget()
@@ -1099,7 +1179,8 @@ class MainWindow(QMainWindow):
             if not next_idx.isValid():
                 next_idx = view.model().index(curr_idx.row() - 1, 0, curr_idx.parent())
             if next_idx.isValid():
-                sel_mod.setCurrentIndex(next_idx, QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows)
+                sel_mod.setCurrentIndex(
+                    next_idx, QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows)
             else:
                 self.close_inline_preview()
 
@@ -1109,40 +1190,45 @@ class MainWindow(QMainWindow):
             res = FileOps.delete_paths([path], permanent=False)
             errors = [r[2] for r in res if not r[1]]
             if errors:
-                msg = self.config_mgr.get_text("ui_explorer_toast_delete_failed").format(errors[0])
+                msg = self.config_mgr.get_text(
+                    "ui_explorer_toast_delete_failed").format(errors[0])
                 self.show_toast(msg, "error")
             else:
                 self.register_undo([(path, path)], "trash")
-            
+
         elif action == "extract":
             dest_dir = target_pane.path_edit.text()
-            if not dest_dir: return
+            if not dest_dir:
+                return
             dest = os.path.join(dest_dir, os.path.basename(path))
-            
+
             if hasattr(view, "perform_operation"):
                 view.perform_operation([(path, dest)], "move")
             else:
                 import shutil
                 shutil.move(path, dest)
-                
+
         elif action == "duplicate":
             import shutil
             dest_pane = self._preview_target_pane
             # TODO: ExplorerPane 應暴露 public current_path() property 供外部使用
             dest_dir = dest_pane._current_path  # explorer_pane.py:446
             if not dest_dir or not os.path.isdir(dest_dir):
-                self.show_toast(self.config_mgr.get_text("ui_main_toast_copy_failed_path"), "error")
+                self.show_toast(self.config_mgr.get_text(
+                    "ui_main_toast_copy_failed_path"), "error")
                 return
             base_name = os.path.basename(path)
             name_part, ext_part = os.path.splitext(base_name)
             new_path = os.path.join(dest_dir, base_name)
             counter = 2
             while os.path.exists(new_path):
-                new_path = os.path.join(dest_dir, f"{name_part} ({counter}){ext_part}")
+                new_path = os.path.join(
+                    dest_dir, f"{name_part} ({counter}){ext_part}")
                 counter += 1
             try:
                 shutil.copy2(path, new_path)
-                msg = self.config_mgr.get_text("ui_main_toast_copy_success").format(os.path.basename(new_path))
+                msg = self.config_mgr.get_text(
+                    "ui_main_toast_copy_success").format(os.path.basename(new_path))
                 self.show_toast(msg, "success")
                 dest_pane.refresh()
                 # 複製成功後自動推進來源面板到下一個項目（心流體驗）
@@ -1152,7 +1238,8 @@ class MainWindow(QMainWindow):
                     if nxt.isValid():
                         self._preview_source_view.setCurrentIndex(nxt)
             except Exception as e:
-                msg = self.config_mgr.get_text("ui_main_toast_copy_failed").format(e)
+                msg = self.config_mgr.get_text(
+                    "ui_main_toast_copy_failed").format(e)
                 self.show_toast(msg, "error")
 
     def _sync_side(self, side):
@@ -1175,14 +1262,15 @@ class MainWindow(QMainWindow):
         """依左右各分頁名稱產生預設情境名稱，例如 BBB<->CCC"""
         def tab_names(tw):
             return [tw.tabText(i) for i in range(tw.count())]
-        left  = " / ".join(tab_names(self.left_tabs))  or "（空）"
+        left = " / ".join(tab_names(self.left_tabs)) or "（空）"
         right = " / ".join(tab_names(self.right_tabs)) or "（空）"
         return f"{left}<->{right}"
 
     def _show_snapshot_menu(self):
         menu = QMenu(self)
 
-        save_act = menu.addAction(self.config_mgr.get_text("ui_main_snapshot_default_name", "＋ 儲存目前情境快照"))
+        save_act = menu.addAction(self.config_mgr.get_text(
+            "ui_main_snapshot_default_name", "＋ 儲存目前情境快照"))
         save_act.triggered.connect(self._save_snapshot)
 
         snapshots = self.config_mgr.get_snapshots()
@@ -1190,10 +1278,14 @@ class MainWindow(QMainWindow):
             menu.addSeparator()
             for i, snap in enumerate(snapshots):
                 sub = menu.addMenu(f"📂 {snap['name']}")
-                restore_act = sub.addAction(self.config_mgr.get_text("ui_main_snapshot_restore", "還原"))
-                restore_act.triggered.connect(lambda checked, s=snap: self._restore_snapshot(s))
-                del_act = sub.addAction(self.config_mgr.get_text("ui_main_snapshot_delete", "刪除"))
-                del_act.triggered.connect(lambda checked, idx=i: self._delete_snapshot(idx))
+                restore_act = sub.addAction(
+                    self.config_mgr.get_text("ui_main_snapshot_restore", "還原"))
+                restore_act.triggered.connect(
+                    lambda checked, s=snap: self._restore_snapshot(s))
+                del_act = sub.addAction(self.config_mgr.get_text(
+                    "ui_main_snapshot_delete", "刪除"))
+                del_act.triggered.connect(
+                    lambda checked, idx=i: self._delete_snapshot(idx))
 
         from PyQt6.QtWidgets import QToolButton
         snap_btn = None
@@ -1201,14 +1293,17 @@ class MainWindow(QMainWindow):
             if w.objectName() == "snapshotBtn":
                 snap_btn = w
                 break
-        pos = snap_btn.mapToGlobal(QPoint(0, snap_btn.height())) if snap_btn else self.mapToGlobal(QPoint(0, 40))
+        pos = snap_btn.mapToGlobal(
+            QPoint(0, snap_btn.height())) if snap_btn else self.mapToGlobal(QPoint(0, 40))
         menu.exec(pos)
 
     def _save_snapshot(self):
         from PyQt6.QtWidgets import QInputDialog
         default_name = self._snapshot_auto_name()
-        title = self.config_mgr.get_text("ui_main_snapshot_dialog_title", "儲存情境快照")
-        label = self.config_mgr.get_text("ui_main_snapshot_dialog_label", "快照名稱：")
+        title = self.config_mgr.get_text(
+            "ui_main_snapshot_dialog_title", "儲存情境快照")
+        label = self.config_mgr.get_text(
+            "ui_main_snapshot_dialog_label", "快照名稱：")
         name, ok = QInputDialog.getText(self, title, label, text=default_name)
         if not ok or not name.strip():
             return
@@ -1218,7 +1313,8 @@ class MainWindow(QMainWindow):
                    for i in range(self.right_tabs.count())]
         sizes = self.splitter.sizes()
         self.config_mgr.add_snapshot(name.strip(), l_paths, r_paths, sizes)
-        msg = self.config_mgr.get_text("ui_main_toast_snapshot_saved", "情境快照「{}」已儲存").format(name.strip())
+        msg = self.config_mgr.get_text(
+            "ui_main_toast_snapshot_saved", "情境快照「{}」已儲存").format(name.strip())
         self.show_toast(msg, "success")
 
     def _restore_snapshot(self, snap: dict):
@@ -1236,7 +1332,8 @@ class MainWindow(QMainWindow):
         sizes = snap.get("splitter_sizes")
         if sizes and len(sizes) == 2 and sum(sizes) > 0:
             self.splitter.setSizes(sizes)
-        msg = self.config_mgr.get_text("ui_main_toast_snapshot_restored", "已還原情境快照「{}」").format(snap['name'])
+        msg = self.config_mgr.get_text(
+            "ui_main_toast_snapshot_restored", "已還原情境快照「{}」").format(snap['name'])
         self.show_toast(msg, "info")
 
     def _delete_snapshot(self, index: int):
@@ -1250,7 +1347,7 @@ class MainWindow(QMainWindow):
             # 1. 預處理：先將「雙空格 (大群組間距)」與「單空格 (鍵與文字間距)」替換成唯一標記
             text = text.replace("💡", "💡&nbsp;")
             text = text.replace("  ", "{{GAP_L}}").replace(" ", "{{GAP_S}}")
-            
+
             # 2. 定義鍵帽樣式 (VS Code Dark 風格：深灰色背景 + 淡灰色邊框)
             kbd_style = (
                 "background-color: #333842; color: #abb2bf; "
@@ -1258,11 +1355,11 @@ class MainWindow(QMainWindow):
                 "font-family: 'Consolas', 'Courier New', monospace; "
                 "font-size: 11px; padding: 1px 3px;"
             )
-            
+
             # 3. 轉換 [按鍵] 為實體鍵帽 HTML 標籤
-            text = re.sub(r'\[([^\]]+)\]', 
+            text = re.sub(r'\[([^\]]+)\]',
                           f'<span style="{kbd_style}">&nbsp;\\1&nbsp;</span>', text)
-            
+
             # 4. 還原標記：GAP_L 為群組間距(4格)，GAP_S 為鍵與字間距(1格)
             text = text.replace("{{GAP_L}}", "&nbsp;" * 4)
             text = text.replace("{{GAP_S}}", "&nbsp;")
@@ -1292,7 +1389,8 @@ class MainWindow(QMainWindow):
         """Ctrl+Z：復原最後一次 move 或 rename。"""
         entry = self.undo_stack.pop()
         if entry is None:
-            self.show_toast(self.config_mgr.get_text("ui_main_undo_nothing", "沒有可復原的操作"), "info")
+            self.show_toast(self.config_mgr.get_text(
+                "ui_main_undo_nothing", "沒有可復原的操作"), "info")
             return
 
         self._undoing = True
@@ -1307,24 +1405,30 @@ class MainWindow(QMainWindow):
                     try:
                         os.rename(new_path, old_path)
                     except OSError as e:
-                        self.show_toast(self.config_mgr.get_text("ui_main_undo_failed", "復原失敗: {}").format(e), "error")
+                        self.show_toast(self.config_mgr.get_text(
+                            "ui_main_undo_failed", "復原失敗: {}").format(e), "error")
                         return
                 self.refresh_all_panes()
-                self.show_toast(self.config_mgr.get_text("ui_main_undo_rename_done", "已復原重新命名"), "success")
+                self.show_toast(self.config_mgr.get_text(
+                    "ui_main_undo_rename_done", "已復原重新命名"), "success")
             elif entry.kind == "trash":
                 import winshell
                 failed = []
                 for original_path, _ in entry.pairs:
                     try:
-                        norm_path = os.path.abspath(os.path.normpath(original_path))
+                        norm_path = os.path.abspath(
+                            os.path.normpath(original_path))
                         winshell.undelete(norm_path)
                     except Exception as e:
-                        failed.append(f"{os.path.basename(original_path)} ({e})")
+                        failed.append(
+                            f"{os.path.basename(original_path)} ({e})")
                 self.refresh_all_panes()
                 if failed:
-                    self.show_toast(self.config_mgr.get_text("ui_main_undo_trash_partial_fail", "部分還原失敗：{}").format(', '.join(failed)), "error")
+                    self.show_toast(self.config_mgr.get_text(
+                        "ui_main_undo_trash_partial_fail", "部分還原失敗：{}").format(', '.join(failed)), "error")
                 else:
-                    self.show_toast(self.config_mgr.get_text("ui_main_undo_trash_done", "已從回收筒還原 {} 個項目").format(len(entry.pairs)), "success")
+                    self.show_toast(self.config_mgr.get_text(
+                        "ui_main_undo_trash_done", "已從回收筒還原 {} 個項目").format(len(entry.pairs)), "success")
         finally:
             self._undoing = False
 
@@ -1334,20 +1438,22 @@ class MainWindow(QMainWindow):
             return
 
         original_text = self.msg_label.text()
-        self.set_status_msg(self.config_mgr.get_text("ui_main_flash_tab_hint", "[Tab] 切換分頁"), "tip")
-        
+        self.set_status_msg(self.config_mgr.get_text(
+            "ui_main_flash_tab_hint", "[Tab] 切換分頁"), "tip")
+
         self._flash_step = 0
         self._flash_timer = QTimer(self)
-        
+
         def toggle():
             self._flash_step += 1
             # 切換閃爍屬性
             flashing = (self._flash_step % 2 == 1)
-            self.msg_label.setProperty("flash", "true" if flashing else "false")
+            self.msg_label.setProperty(
+                "flash", "true" if flashing else "false")
             self.msg_label.style().unpolish(self.msg_label)
             self.msg_label.style().polish(self.msg_label)
 
-            if self._flash_step >= 6: # 閃爍 3 次 (開關各一次為 1 step，0.5s * 6 = 3s)
+            if self._flash_step >= 6:  # 閃爍 3 次 (開關各一次為 1 step，0.5s * 6 = 3s)
                 self._flash_timer.stop()
                 self.msg_label.setProperty("flash", "false")
                 self.set_status_msg(original_text, "tip")
@@ -1364,7 +1470,8 @@ class MainWindow(QMainWindow):
             path = action.data()
             if os.path.exists(path) or path == "":
                 menu.addAction(self.config_mgr.get_text("ui_main_ctx_open_new_tab", "在新分頁開啟")).triggered.connect(
-                    lambda: self.add_new_tab(self.left_tabs if self.active_pane in [self.left_tabs.widget(i) for i in range(self.left_tabs.count())] else self.right_tabs, path)
+                    lambda: self.add_new_tab(self.left_tabs if self.active_pane in [self.left_tabs.widget(
+                        i) for i in range(self.left_tabs.count())] else self.right_tabs, path)
                 )
 
         if not menu.isEmpty():
@@ -1381,9 +1488,11 @@ class MainWindow(QMainWindow):
         path = pane._current_path if hasattr(pane, "_current_path") else ""
 
         menu = QMenu(self)
-        menu.addAction(self.config_mgr.get_text("ui_main_action_close_tab", "關閉分頁")).triggered.connect(lambda: self.close_tab(tw, idx))
+        menu.addAction(self.config_mgr.get_text("ui_main_action_close_tab",
+                       "關閉分頁")).triggered.connect(lambda: self.close_tab(tw, idx))
         if path and os.path.exists(path):
-            menu.addAction(self.config_mgr.get_text("ui_main_ctx_open_new_window", "在新視窗開啟")).triggered.connect(lambda: self.open_new_window(path))
+            menu.addAction(self.config_mgr.get_text("ui_main_ctx_open_new_window",
+                           "在新視窗開啟")).triggered.connect(lambda: self.open_new_window(path))
 
         menu.exec(tw.tabBar().mapToGlobal(pos))
 
@@ -1392,7 +1501,8 @@ class MainWindow(QMainWindow):
         try:
             os.startfile(path)
         except Exception as e:
-            self.show_toast(self.config_mgr.get_text("ui_main_ctx_open_window_failed", "無法開啟新視窗: {}").format(e), "error")
+            self.show_toast(self.config_mgr.get_text(
+                "ui_main_ctx_open_window_failed", "無法開啟新視窗: {}").format(e), "error")
 
     def on_quick_add_path(self, path):
         if path and path not in self.custom_paths:
@@ -1406,7 +1516,8 @@ class MainWindow(QMainWindow):
         import tempfile
 
         if not path or not os.path.isdir(path):
-            QMessageBox.warning(self, self.config_mgr.get_text("ui_main_warn_title", "警告"), self.config_mgr.get_text("ui_main_warn_select_folder", "請選取一個資料夾。"))
+            QMessageBox.warning(self, self.config_mgr.get_text(
+                "ui_main_warn_title", "警告"), self.config_mgr.get_text("ui_main_warn_select_folder", "請選取一個資料夾。"))
             return
 
         ai_settings = self.config_mgr.get_ai_exporter_settings()
@@ -1416,32 +1527,21 @@ class MainWindow(QMainWindow):
         total = count_items(path, blacklist=blacklist, max_depth=max_depth)
         if total > 1000:
             reply = QMessageBox.question(
-                self, self.config_mgr.get_text("ui_main_warn_too_many_items_title", "項目數量過多"),
-                self.config_mgr.get_text("ui_main_warn_too_many_items_msg", "此資料夾共有 {:,} 個項目，產生樹狀圖可能需要一點時間。\n確定繼續？").format(total),
+                self, self.config_mgr.get_text(
+                    "ui_main_warn_too_many_items_title", "項目數量過多"),
+                self.config_mgr.get_text(
+                    "ui_main_warn_too_many_items_msg", "此資料夾共有 {:,} 個項目，產生樹狀圖可能需要一點時間。\n確定繼續？").format(total),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
 
-        tree_text = generate_tree(path, blacklist=blacklist, max_depth=max_depth)
+        tree_text = generate_tree(
+            path, blacklist=blacklist, max_depth=max_depth)
         folder_name = os.path.basename(path.rstrip("/\\")) or "tree"
-        tmp_path = os.path.join(tempfile.gettempdir(), f"{folder_name}_tree.txt")
+        tmp_path = os.path.join(tempfile.gettempdir(),
+                                f"{folder_name}_tree.txt")
         with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(tree_text)
         import subprocess
         subprocess.Popen(["notepad.exe", tmp_path])
-
-    def on_export_ai_context(self, path, include_contents=True):
-        """啟動 AI Context 匯出流程"""
-        if not path or not os.path.exists(path):
-            QMessageBox.warning(self, self.config_mgr.get_text("ui_main_warn_title", "警告"), self.config_mgr.get_text("ui_main_warn_invalid_path", "無效的路徑，無法生成報告。"))
-            return
-            
-        settings = self.config_mgr.get_ai_exporter_settings()
-        
-        # Instantiate the Qt dialog (IAIExporterView adapter source)
-        dialog = AIExporterProgressDialog(self)
-        view_adapter = dialog.get_view_adapter()
-        
-        self._ai_exporter_presenter = AIExporterPresenter(view_adapter, path, settings, include_contents)
-        self._ai_exporter_presenter.start()

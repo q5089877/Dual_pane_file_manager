@@ -197,10 +197,10 @@ def render_cloud_placeholder(path: str) -> str:
   <div style="margin-top: 30px;">
     <a href="fspath:{_html_escape(os.path.abspath(path))}" 
        style="background: #3498db; color: white; padding: 10px 24px; border-radius: 20px; text-decoration: none; font-weight: bold; font-size: 13px; box-shadow: 0 4px 15px rgba(52,152,219,0.3);">
-       ⬇️ 下載並預覽內容
+       ↗ 用系統程式開啟（觸發下載）
     </a>
   </div>
-  <div style="color: #585b70; font-size: 11px; margin-top: 15px;">或者直接雙擊檔案以使用系統預設程式開啟</div>
+  <div style="color: #585b70; font-size: 11px; margin-top: 15px;">檔案將由 OneDrive 下載後以系統預設程式開啟</div>
 </div>"""
     return _base_html(body)
 

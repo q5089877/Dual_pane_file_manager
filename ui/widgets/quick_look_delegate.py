@@ -2,6 +2,7 @@ import os
 from PyQt6.QtWidgets import QStyledItemDelegate, QStyle
 from PyQt6.QtCore import Qt, QRect, pyqtSignal, QEvent, QPoint, QRectF
 from PyQt6.QtGui import QPainter, QFileSystemModel, QColor, QPainterPath
+from core.file_ops import FileOps
 
 
 class QuickLookDelegate(QStyledItemDelegate):
@@ -37,6 +38,20 @@ class QuickLookDelegate(QStyledItemDelegate):
         super().paint(painter, option, index)
 
         path = self._get_path(index)
+
+        if path and FileOps.is_cloud_only(path):
+            r = 4
+            x = option.rect.left() + 18
+            y = option.rect.top() + option.rect.height() - r - 2
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255))
+            painter.drawEllipse(QPoint(x, y), r + 1, r + 1)
+            painter.setBrush(QColor(0, 120, 212))
+            painter.drawEllipse(QPoint(x, y), r, r)
+            painter.restore()
+
         is_hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
         is_active = (path == self.active_preview_path) and bool(path)
 

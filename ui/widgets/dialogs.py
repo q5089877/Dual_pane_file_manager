@@ -4,12 +4,12 @@ from PyQt6.QtWidgets import (
     QLabel, QMessageBox, QListWidget, QInputDialog,
     QHeaderView, QCheckBox,
     QMenu, QToolButton, QTreeView, QProgressBar, QStatusBar, QFileIconProvider, QComboBox,
-    QTabWidget, QWidget, QFormLayout, QSpinBox, QFileDialog, QProgressDialog,
+    QTabWidget, QWidget, QFormLayout, QSpinBox, QFileDialog,
 )
 from PyQt6.QtCore import Qt, QTimer, QFileInfo, QSortFilterProxyModel, pyqtSignal
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QColor
 from ui.presenters.search_presenter import SearchPresenter
-from core.interfaces import ISearchView, IAIExporterView
+from core.interfaces import ISearchView
 
 
 class DateSortProxyModel(QSortFilterProxyModel):
@@ -263,7 +263,7 @@ class SearchDialog(QDialog):
         # --- Body Section (Results Tree) ---
         self.tree = QTreeView()
         self.tree.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
-        self.tree.setSelectionMode(QTreeView.SelectionMode.SingleSelection)
+        self.tree.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         self.tree.setRootIsDecorated(False)
         self.tree.setIndentation(0)
         self.tree.setSortingEnabled(True)
@@ -305,6 +305,28 @@ class SearchDialog(QDialog):
         self.tree.setColumnWidth(5, 400) # 完整路徑預設寬度
         
         self.main_layout.addWidget(self.tree)
+        self.tree.selectionModel().selectionChanged.connect(self._on_selection_changed)
+
+        # Action bar — shown when one or more rows are selected
+        self.action_bar = QWidget()
+        self.action_bar.setObjectName("searchActionBar")
+        self.action_bar.hide()
+        _ab = QHBoxLayout(self.action_bar)
+        _ab.setContentsMargins(8, 4, 8, 4)
+        _ab.setSpacing(6)
+        self.action_count_label = QLabel("")
+        _ab.addWidget(self.action_count_label)
+        _ab.addStretch()
+        self.action_copy_btn = QPushButton("複製到對面欄")
+        self.action_copy_btn.clicked.connect(self._copy_to_pane)
+        _ab.addWidget(self.action_copy_btn)
+        self.action_move_btn = QPushButton("移動到對面欄")
+        self.action_move_btn.clicked.connect(self._move_to_pane)
+        _ab.addWidget(self.action_move_btn)
+        self.action_copy_path_btn = QPushButton("複製路徑")
+        self.action_copy_path_btn.clicked.connect(self._copy_paths_to_clipboard)
+        _ab.addWidget(self.action_copy_path_btn)
+        self.main_layout.addWidget(self.action_bar)
 
         # --- Footer Section (Progress & Status) ---
         self.scan_progress_label = QLabel("")
@@ -493,6 +515,79 @@ class SearchDialog(QDialog):
 
         self.model.appendRow([item_locate, item_name, item_date, item_size, item_context, item_path])
 
+    def _get_selected_paths(self) -> list[str]:
+        paths = []
+        for proxy_idx in self.tree.selectionModel().selectedRows():
+            src = self.proxy_model.mapToSource(proxy_idx)
+            item = self.model.item(src.row(), 1)
+            if item:
+                paths.append(item.data(Qt.ItemDataRole.UserRole))
+        return [p for p in paths if p]
+
+    def _on_selection_changed(self):
+        count = len(self.tree.selectionModel().selectedRows())
+        if count == 0:
+            self.action_bar.hide()
+            return
+        self.action_count_label.setText(f"已選取 {count} 個項目")
+        self.action_bar.show()
+
+    def _find_main_window(self):
+        p = self.parent()
+        while p:
+            if hasattr(p, '_get_opposite_pane'):
+                return p
+            p = p.parent()
+        return None
+
+    def _copy_to_pane(self):
+        self._do_copy_or_move(move=False)
+
+    def _move_to_pane(self):
+        self._do_copy_or_move(move=True)
+
+    def _do_copy_or_move(self, move: bool):
+        import shutil
+        paths = self._get_selected_paths()
+        if not paths:
+            return
+        main_win = self._find_main_window()
+        if not main_win:
+            return
+        opp = main_win._get_opposite_pane()
+        if not opp:
+            return
+        dest_dir = opp.path_edit.text()
+        if not dest_dir or not os.path.isdir(dest_dir):
+            return
+        errors = []
+        for src in paths:
+            dest = os.path.join(dest_dir, os.path.basename(src))
+            try:
+                if move:
+                    shutil.move(src, dest)
+                else:
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dest)
+                    else:
+                        shutil.copy2(src, dest)
+            except Exception as e:
+                errors.append(f"{os.path.basename(src)}: {e}")
+        opp.refresh()
+        verb = "移動" if move else "複製"
+        done = len(paths) - len(errors)
+        msg = f"{verb}完成：{done} 個項目"
+        if errors:
+            msg += f"，{len(errors)} 個失敗"
+        self.status_label.setText(msg)
+
+    def _copy_paths_to_clipboard(self):
+        from PyQt6.QtWidgets import QApplication
+        paths = self._get_selected_paths()
+        if paths:
+            QApplication.clipboard().setText("\n".join(paths))
+            self.status_label.setText(f"已複製 {len(paths)} 個路徑")
+
     def _format_size(self, size):
         if not size: return "0 B"
         s = float(size)
@@ -546,21 +641,35 @@ class SearchDialog(QDialog):
     def on_context_menu(self, pos):
         index = self.tree.indexAt(pos)
         if not index.isValid(): return
-        
-        # 從第二欄 (名稱) 獲取 UserRole 儲存的完整路徑
+
         source_index = self.proxy_model.mapToSource(index)
         item = self.model.item(source_index.row(), 1)
         path = item.data(Qt.ItemDataRole.UserRole)
-        
+
+        selected = self._get_selected_paths()
+        if path not in selected:
+            selected = [path]
+
         menu = QMenu(self)
-        menu_open = self.config_mgr.get_text("ui_dialog_search_menu_open", "開啟檔案") if self.config_mgr else "開啟檔案"
-        menu_locate = self.config_mgr.get_text("ui_dialog_search_menu_locate", "在主視窗中定位") if self.config_mgr else "在主視窗中定位"
-        menu_copy = self.config_mgr.get_text("ui_dialog_search_menu_copy_path", "複製路徑") if self.config_mgr else "複製路徑"
-        
-        open_act    = menu.addAction(menu_open)
-        jump_act    = menu.addAction(menu_locate)
-        menu.addSeparator()
-        copy_act    = menu.addAction(menu_copy)
+        open_act = jump_act = copy_act = copy_to_act = move_to_act = copy_all_act = None
+
+        if len(selected) <= 1:
+            menu_open   = self.config_mgr.get_text("ui_dialog_search_menu_open",      "開啟檔案")       if self.config_mgr else "開啟檔案"
+            menu_locate = self.config_mgr.get_text("ui_dialog_search_menu_locate",    "在主視窗中定位") if self.config_mgr else "在主視窗中定位"
+            menu_copy   = self.config_mgr.get_text("ui_dialog_search_menu_copy_path", "複製路徑")       if self.config_mgr else "複製路徑"
+            open_act  = menu.addAction(menu_open)
+            jump_act  = menu.addAction(menu_locate)
+            menu.addSeparator()
+            copy_act  = menu.addAction(menu_copy)
+        else:
+            n = len(selected)
+            header = menu.addAction(f"已選取 {n} 個項目")
+            header.setEnabled(False)
+            menu.addSeparator()
+            copy_to_act  = menu.addAction(f"複製 {n} 個項目到對面欄")
+            move_to_act  = menu.addAction(f"移動 {n} 個項目到對面欄")
+            menu.addSeparator()
+            copy_all_act = menu.addAction("複製所有路徑")
 
         action = menu.exec(self.tree.viewport().mapToGlobal(pos))
         if action == open_act:
@@ -577,6 +686,12 @@ class SearchDialog(QDialog):
             mime.setText(path)
             mime.setUrls([QUrl.fromLocalFile(path)])
             QApplication.clipboard().setMimeData(mime)
+        elif action == copy_to_act:
+            self._do_copy_or_move(move=False)
+        elif action == move_to_act:
+            self._do_copy_or_move(move=True)
+        elif action == copy_all_act:
+            self._copy_paths_to_clipboard()
 
     def _update_role_status_ui(self):
         config = self.presenter.config_mgr.load_config()
@@ -760,59 +875,164 @@ class SearchDialog(QDialog):
 
 
 
-from core.interfaces import IAIExporterView
-from PyQt6.QtWidgets import QProgressDialog, QMessageBox
-from PyQt6.QtCore import Qt
+class BatchRenameDialog(QDialog):
+    """批次重新命名對話框。確認後透過 get_op_pairs() 取得 (src, dst) 清單。"""
 
-class AIExporterProgressDialog(QProgressDialog):
-    """
-    Wraps QProgressDialog to provide a visual interface for AI context export.
-    Returns an adapter to satisfy the IAIExporterView interface, avoiding PyQt metaclass conflicts.
-    """
-    def __init__(self, parent=None):
-        self.config_mgr = getattr(parent, 'config_mgr', None) if parent else None
-        
-        label_scanning = self.config_mgr.get_text("ui_dialog_ai_status_scanning", "正在掃描目錄...") if self.config_mgr else "正在掃描目錄..."
-        btn_cancel = self.config_mgr.get_text("ui_dialog_ai_btn_cancel", "取消") if self.config_mgr else "取消"
-        super().__init__(label_scanning, btn_cancel, 0, 100, parent)
-        
-        title = self.config_mgr.get_text("ui_dialog_ai_title", "產生 AI Context") if self.config_mgr else "產生 AI Context"
-        self.setWindowTitle(title)
+    _INVALID_RE = re.compile(r'[\\/:*?"<>|]')
+
+    def __init__(self, src_paths: list[str], config_mgr=None, parent=None):
+        super().__init__(parent)
+        self.config_mgr = config_mgr or (getattr(parent, 'config_mgr', None) if parent else None)
+        self._src_paths = src_paths
+        self._confirmed_pairs: list[tuple[str, str]] = []
+        self._today = datetime.datetime.now().strftime("%Y%m%d")
+        self.setWindowTitle(f"批次重新命名 ({len(src_paths)} 個項目)")
+        self.resize(700, 450)
         self.setWindowModality(Qt.WindowModality.WindowModal)
-        self.setMinimumDuration(0)
-        self.setAutoReset(False)
-        self.setAutoClose(False)
-        
-    def get_view_adapter(self) -> IAIExporterView:
-        class _AIExporterViewAdapter(IAIExporterView):
-            def __init__(self, dlg): self.dlg = dlg
-            def show(self): self.dlg.show()
-            def close(self): self.dlg.close()
-            def set_range(self, total): self.dlg.setMaximum(total)
-            def update_progress(self, filename, current, total):
-                if self.dlg.maximum() != total:
-                    self.dlg.setMaximum(total)
-                self.dlg.setValue(current)
-                
-                tpl = self.dlg.config_mgr.get_text("ui_dialog_ai_status_processing", "處理檔案 ({}/{}):\n{}") if self.dlg.config_mgr else "處理檔案 ({}/{}):\n{}"
-                self.dlg.setLabelText(tpl.format(current, total, filename))
-                
-            def show_success(self, file_count, char_count):
-                title = self.dlg.config_mgr.get_text("ui_dialog_ai_success_title", "匯出成功") if self.dlg.config_mgr else "匯出成功"
-                msg_tpl = self.dlg.config_mgr.get_text("ui_dialog_ai_success_msg", "✅ AI Context 已成功產生並複製到剪貼簿！\n\n• 包含檔案：{} 個\n• 總字元數：{:,} 字\n\n提示：現在可以直接在 ChatGPT 或 Claude 中貼上 (Ctrl+V)。") if self.dlg.config_mgr else "✅ AI Context 已成功產生並複製到剪貼簿！\n\n• 包含檔案：{} 個\n• 總字元數：{:,} 字\n\n提示：現在可以直接在 ChatGPT 或 Claude 中貼上 (Ctrl+V)。"
-                
-                QMessageBox.information(
-                    self.dlg.parent(),
-                    title,
-                    msg_tpl.format(file_count, char_count)
-                )
-            def show_error(self, message):
-                title = self.dlg.config_mgr.get_text("ui_dialog_ai_error_title", "匯出錯誤") if self.dlg.config_mgr else "匯出錯誤"
-                msg_tpl = self.dlg.config_mgr.get_text("ui_dialog_ai_error_msg", "發生錯誤：\n{}") if self.dlg.config_mgr else "發生錯誤：\n{}"
-                QMessageBox.critical(self.dlg.parent(), title, msg_tpl.format(message))
-            def set_cancelled_callback(self, callback):
-                self.dlg.canceled.connect(callback)
-                
-        return _AIExporterViewAdapter(self)
+        self._init_ui()
+        self._update_preview()
 
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        # 樣板列
+        tpl_row = QHBoxLayout()
+        tpl_row.addWidget(QLabel("樣板:"))
+        self._tpl = QLineEdit()
+        self._tpl.setPlaceholderText("例如: {date}_{name}  或  report_{n:03d}")
+        self._tpl.textChanged.connect(self._update_preview)
+        tpl_row.addWidget(self._tpl, 1)
+
+        quick_btn = QToolButton()
+        quick_btn.setText("快速樣板 ▼")
+        quick_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        qm = QMenu(self)
+        for tpl, label in [
+            ("{date}_{name}",  "{date}_{name}  (日期_原名)"),
+            ("{n:03d}_{name}", "{n:03d}_{name}  (序號_原名)"),
+            ("{name}_{date}",  "{name}_{date}  (原名_日期)"),
+            ("{n}_{name}",     "{n}_{name}      (序號_原名)"),
+        ]:
+            qm.addAction(label).triggered.connect(
+                lambda checked, t=tpl: self._tpl.setText(t))
+        quick_btn.setMenu(qm)
+        tpl_row.addWidget(quick_btn)
+        layout.addLayout(tpl_row)
+
+        hint = QLabel("佔位符：{name} 原檔名  {ext} 副檔名  {date} 今日日期  {n} 序號  {n:03d} 補零序號")
+        hint.setStyleSheet("color: gray; font-size: 11px;")
+        layout.addWidget(hint)
+
+        # 預覽表格
+        self._model = QStandardItemModel(0, 4)
+        self._model.setHorizontalHeaderLabels(["#", "原始名稱", "新名稱（預覽）", "狀態"])
+        self._tree = QTreeView()
+        self._tree.setModel(self._model)
+        self._tree.setRootIsDecorated(False)
+        self._tree.setEditTriggers(QTreeView.EditTrigger.NoEditTriggers)
+        self._tree.setSelectionMode(QTreeView.SelectionMode.NoSelection)
+        self._tree.setAlternatingRowColors(True)
+        hdr = self._tree.header()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self._tree.setColumnWidth(0, 36)
+        self._tree.setColumnWidth(1, 200)
+        self._tree.setColumnWidth(3, 80)
+        layout.addWidget(self._tree)
+
+        # 底部按鈕
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(QPushButton("取消", clicked=self.reject))
+        btn_row.addStretch()
+        self._apply_btn = QPushButton(f"套用重新命名 ({len(self._src_paths)} 個)")
+        self._apply_btn.setDefault(True)
+        self._apply_btn.clicked.connect(self._on_apply)
+        btn_row.addWidget(self._apply_btn)
+        layout.addLayout(btn_row)
+
+    def _apply_template(self, template: str, src_path: str, index: int) -> str:
+        name, ext = os.path.splitext(os.path.basename(src_path))
+        result = template
+        result = result.replace("{name}", name)
+        result = result.replace("{ext}",  ext)
+        result = result.replace("{date}", self._today)
+        result = re.sub(r'\{n:([^}]+)\}', lambda m: format(index + 1, m.group(1)), result)
+        result = result.replace("{n}", str(index + 1))
+        if "{ext}" not in template.lower() and ext:
+            result += ext
+        return result
+
+    def _update_preview(self):
+        from collections import Counter
+        template = self._tpl.text()
+        self._model.removeRows(0, self._model.rowCount())
+        if not template.strip():
+            self._apply_btn.setText("套用重新命名 (0 個)")
+            self._apply_btn.setEnabled(False)
+            return
+
+        previews = [(s, self._apply_template(template, s, i), os.path.dirname(s))
+                    for i, s in enumerate(self._src_paths)]
+        dup_counter = Counter((p, n) for (_, n, p) in previews)
+
+        valid = 0
+        for i, (src, new_name, parent) in enumerate(previews):
+            orig = os.path.basename(src)
+            new_path = os.path.join(parent, new_name)
+            same = os.path.normcase(new_name) == os.path.normcase(orig)
+
+            if same:
+                st, color, ok = "—", QColor("gray"), False
+            elif self._INVALID_RE.search(new_name):
+                st, color, ok = "✗ 無效", QColor("#e74c3c"), False
+            elif dup_counter[(parent, new_name)] > 1:
+                st, color, ok = "⚠ 重複", QColor("#e67e22"), False
+            elif os.path.normcase(new_path) != os.path.normcase(src) and os.path.exists(new_path):
+                st, color, ok = "⚠ 重複", QColor("#e67e22"), False
+            else:
+                st, color, ok = "✓", QColor("#2ecc71"), True
+
+            if ok:
+                valid += 1
+
+            row = [QStandardItem(str(i + 1)), QStandardItem(orig),
+                   QStandardItem(new_name),   QStandardItem(st)]
+            row[0].setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+            row[3].setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+            row[3].setForeground(color)
+            self._model.appendRow(row)
+
+        self._apply_btn.setText(f"套用重新命名 ({valid} 個)")
+        self._apply_btn.setEnabled(valid > 0)
+
+    def _on_apply(self):
+        from collections import Counter
+        template = self._tpl.text().strip()
+        if not template:
+            return
+        pairs = []
+        for i, src in enumerate(self._src_paths):
+            new_name = self._apply_template(template, src, i)
+            parent   = os.path.dirname(src)
+            new_path = os.path.join(parent, new_name)
+            if os.path.normcase(os.path.basename(src)) == os.path.normcase(new_name):
+                continue
+            if self._INVALID_RE.search(new_name):
+                continue
+            if os.path.normcase(new_path) != os.path.normcase(src) and os.path.exists(new_path):
+                continue
+            pairs.append((src, new_path))
+        dest_count = Counter(os.path.normcase(d) for _, d in pairs)
+        pairs = [(s, d) for s, d in pairs if dest_count[os.path.normcase(d)] == 1]
+        if not pairs:
+            return
+        self._confirmed_pairs = pairs
+        self.accept()
+
+    def get_op_pairs(self) -> list[tuple[str, str]]:
+        return self._confirmed_pairs
 
