@@ -380,6 +380,8 @@ class ConfigManager:
         theme = self.get_theme_colors()
         maint = config.get("maintenance_settings", {})
         paste = config.get("paste_settings", {})
+        _default_exts = [".tmp", ".bak", ".log", ".cache", ".thumbs", ".db-wal", ".db-shm", ".lock"]
+        _default_dirs = ["Archive", "Old", "Temp", "_archive", "Backup", "$RECYCLE.BIN"]
         return {
             "theme_name":            theme.get("themeName", "調光護眼 (預設)"),
             "restore_last_session":  config.get("restore_last_session", True),
@@ -387,6 +389,11 @@ class ConfigManager:
                 "remote_index_root",
                 r"K:\SHL TECH\_STEC_Staff\Neil\效率提升軟體\K槽檔案尋找資料庫存放區"
             ),
+            "is_master_node":        config.get("is_master_node", False),
+            "monitored_paths":       config.get("monitored_paths", []),
+            "network_scan_depth":    config.get("network_scan_depth", 7),
+            "exclude_exts":          config.get("exclude_exts") or _default_exts,
+            "exclude_dirs":          config.get("exclude_dirs") or _default_dirs,
             "max_depth":             config.get("max_depth", 2),
             "search_limit":          config.get("search_limit", 1000),
             "nightly_scan_hour":     maint.get("nightly_scan_hour", 2),

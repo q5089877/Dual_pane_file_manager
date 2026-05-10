@@ -1,6 +1,7 @@
 import os
 from core.interfaces import IExplorerView
 from core.file_ops import FileOps
+from core.system_utils import path_exists_fast as _path_exists_fast
 
 HOME_PATH = "home://"  # 虛擬首頁路徑（磁碟機 + 常用資料夾）
 
@@ -17,7 +18,7 @@ class ExplorerPresenter:
         self.is_navigating_history = False
 
     def navigate_to(self, path: str):
-        if path != HOME_PATH and (not path or not os.path.exists(path)):
+        if path != HOME_PATH and (not path or not _path_exists_fast(path)):
             return
             
         curr = self.view.get_current_path()

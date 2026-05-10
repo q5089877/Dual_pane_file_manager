@@ -1,4 +1,6 @@
-import os, datetime, re
+import os, datetime, re, logging
+
+logger = logging.getLogger(__name__)
 
 def _natural_key(s: str) -> list:
     """Split string into text/number chunks for human-friendly sorting."""
@@ -879,52 +881,29 @@ class DuplicateAnalysisDialog(QDialog):
     # ── inner worker ──────────────────────────────────────────────────────────
     class _Worker(QThread):
         from PyQt6.QtCore import pyqtSignal
-        progress = pyqtSignal(str)    # status text while running
-        done     = pyqtSignal(list)   # list of (size: int, paths: list[str])
+        progress = pyqtSignal(str)
+        done     = pyqtSignal(list)   # list[tuple[str, int, list[str]]]
 
         def __init__(self, index_mgr, parent=None):
             super().__init__(parent)
             self._index_mgr = index_mgr
 
-        @staticmethod
-        def _fingerprint(path: str, chunk: int = 4096) -> str:
-            import hashlib
-            try:
-                h = hashlib.md5()
-                with open(path, 'rb') as f:
-                    head = f.read(chunk)
-                    h.update(head)
-                    if f.seek(0, 2) > chunk * 2:   # file larger than 2 chunks
-                        f.seek(-chunk, 2)
-                        h.update(f.read(chunk))
-                return h.hexdigest()
-            except Exception:
-                return ""
-
         def run(self):
-            # Step 1: size-based candidates from DB
-            rows = self._index_mgr.find_duplicates_by_size()
-            by_size: dict[int, list[str]] = {}
-            for size, _name, full_path in rows:
-                by_size.setdefault(int(size), []).append(full_path)
+            self.progress.emit("查詢資料庫...")
+            rows = self._index_mgr.find_duplicates()
+            # rows: (name, size, full_path, mtime)
 
-            # Step 2: fingerprint each candidate, regroup by (size, fingerprint)
-            confirmed: list[tuple[int, list[str]]] = []
-            total = sum(len(v) for v in by_size.values())
-            done = 0
-            for size, paths in sorted(by_size.items(), reverse=True):
-                by_fp: dict[str, list[str]] = {}
-                for p in paths:
-                    fp = self._fingerprint(p)
-                    if fp:
-                        by_fp.setdefault(fp, []).append(p)
-                    done += 1
-                    self.progress.emit(f"{done} / {total}")
-                for fp_paths in by_fp.values():
-                    if len(fp_paths) > 1:
-                        confirmed.append((size, fp_paths))
-            confirmed.sort(key=lambda x: x[0], reverse=True)
-            self.done.emit(confirmed)
+            by_key: dict[tuple[str, int], list[str]] = {}
+            for name, size, full_path, _mtime in rows:
+                by_key.setdefault((name, int(size)), []).append(full_path)
+
+            groups: list[tuple[str, int, list[str]]] = [
+                (name, size, paths)
+                for (name, size), paths in sorted(by_key.items(), key=lambda x: x[0][1], reverse=True)
+                if len(paths) >= 2
+            ]
+            logger.info(f"[DupAnalysis] {len(rows)} rows → {len(groups)} duplicate groups")
+            self.done.emit(groups)
 
     # ── dialog ────────────────────────────────────────────────────────────────
 
@@ -936,8 +915,8 @@ class DuplicateAnalysisDialog(QDialog):
         self._worker = None
         title = config_mgr.get_text("ui_dup_analysis_title", "重複檔案分析") if config_mgr else "重複檔案分析"
         self.setWindowTitle(title)
-        self.resize(860, 580)
-        self.setWindowFlag(Qt.WindowType.Window)
+        self.resize(900, 600)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         self._build_ui()
         QTimer.singleShot(50, self._start_worker)
 
@@ -955,17 +934,26 @@ class DuplicateAnalysisDialog(QDialog):
         col_size = self._config_mgr.get_text("ui_dup_analysis_col_size", "大小") if self._config_mgr else "大小"
         self._tree = QTreeWidget()
         self._tree.setHeaderLabels([col_path, col_size])
-        self._tree.setColumnWidth(0, 660)
+        self._tree.setColumnWidth(0, 720)
         self._tree.setColumnWidth(1, 90)
         self._tree.setRootIsDecorated(True)
         self._tree.setAlternatingRowColors(True)
         self._tree.itemDoubleClicked.connect(self._on_double_click)
+        self._tree.currentItemChanged.connect(self._on_selection_changed)
+        self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._tree, stretch=1)
 
         btn_row = QHBoxLayout()
+        self._del_btn = QPushButton("🗑 移至資源回收筒")
+        self._del_btn.setEnabled(False)
+        self._del_btn.setToolTip("將選取的檔案移至資源回收筒（可復原）")
+        self._del_btn.clicked.connect(self._delete_selected)
+        btn_row.addWidget(self._del_btn)
         btn_row.addStretch()
         nav_text = self._config_mgr.get_text("ui_dup_analysis_navigate", "導航至所選路徑") if self._config_mgr else "導航至所選路徑"
         self._nav_btn = QPushButton(nav_text)
+        self._nav_btn.setEnabled(False)
         self._nav_btn.clicked.connect(self._navigate_selected)
         btn_row.addWidget(self._nav_btn)
         close_text = self._config_mgr.get_text("ui_dialog_settings_btn_cancel", "關閉") if self._config_mgr else "關閉"
@@ -984,52 +972,227 @@ class DuplicateAnalysisDialog(QDialog):
 
     def _start_worker(self):
         self._worker = self._Worker(self._index_mgr, parent=self)
-        verifying = self._config_mgr.get_text("ui_dup_analysis_loading", "分析中...") if self._config_mgr else "分析中..."
-        progress_tpl = self._config_mgr.get_text("ui_dup_analysis_progress", "驗證指紋 {}") if self._config_mgr else "驗證指紋 {}"
-        self._worker.progress.connect(lambda s: self._status_label.setText(progress_tpl.format(s)))
-        self._worker.done.connect(self._on_done)
-        self._status_label.setText(verifying)
+        loading = self._config_mgr.get_text("ui_dup_analysis_loading", "分析中...") if self._config_mgr else "分析中..."
+        self._worker.progress.connect(self._status_label.setText)
+        self._worker.done.connect(self._populate_tree)
+        self._status_label.setText(loading)
         self._worker.start()
 
-    def _on_done(self, confirmed: list):
+    @staticmethod
+    def _short_folder(folder: str, depth: int = 3) -> str:
+        """Return last `depth` path components for compact display."""
+        parts = folder.replace('/', '\\').rstrip('\\').split('\\')
+        return '\\'.join(parts[-depth:]) if len(parts) > depth else folder
+
+    def _populate_tree(self, groups: list):
+        # groups: list[tuple[str, int, list[str]]]  (name, size, [path, ...])
         self._tree.clear()
-        if not confirmed:
+        if not groups:
             empty = self._config_mgr.get_text("ui_dup_analysis_empty", "未找到重複檔案") if self._config_mgr else "未找到重複檔案"
             self._status_label.setText(empty)
             return
 
-        total = sum(len(paths) for _, paths in confirmed)
-        summary = (
-            self._config_mgr.get_text("ui_dup_analysis_summary", "找到 {} 組重複，共 {} 個檔案").format(len(confirmed), total)
-            if self._config_mgr else f"找到 {len(confirmed)} 組重複，共 {total} 個檔案"
-        )
-        self._status_label.setText(summary)
+        # ── Group by folder-pair ───────────────────────────────────────────────
+        pair_map: dict[frozenset, list[tuple[str, int, list[str]]]] = {}
+        for name, size, paths in groups:
+            key = frozenset(os.path.dirname(p) for p in paths)
+            pair_map.setdefault(key, []).append((name, size, paths))
 
-        group_tpl = (
-            self._config_mgr.get_text("ui_dup_analysis_group", "{size} — {count} 個重複")
-            if self._config_mgr else "{size} — {count} 個重複"
-        )
-        for size, paths in confirmed:
-            size_str = self._fmt_size(size)
-            header = QTreeWidgetItem([group_tpl.format(size=size_str, count=len(paths)), size_str])
-            header.setExpanded(True)
-            for p in paths:
-                child = QTreeWidgetItem([p, size_str])
-                child.setData(0, Qt.ItemDataRole.UserRole, p)
-                header.addChild(child)
-            self._tree.addTopLevelItem(header)
+        def _pair_waste(file_groups: list) -> int:
+            return sum((len(paths) - 1) * size for _, size, paths in file_groups)
+
+        sorted_pairs = sorted(pair_map.items(), key=lambda x: _pair_waste(x[1]), reverse=True)
+
+        total_files = sum(len(paths) for _, _, paths in groups)
+        self._status_label.setText(f"找到 {len(sorted_pairs)} 個資料夾對，{len(groups)} 組重複，共 {total_files} 個檔案")
+
+        # ── Build tree ─────────────────────────────────────────────────────────
+        for folders, file_groups in sorted_pairs:
+            folder_list = sorted(folders)
+            short_label = " ↔ ".join(self._short_folder(f) for f in folder_list)
+            waste_str   = self._fmt_size(_pair_waste(file_groups))
+            pair_item   = QTreeWidgetItem([f"📁 {short_label}   ({len(file_groups)} 組, 浪費 {waste_str})", ""])
+            pair_item.setToolTip(0, " ↔ ".join(folder_list))
+            pair_item.setExpanded(False)
+
+            for name, size, paths in sorted(file_groups, key=lambda x: x[1], reverse=True):
+                size_str  = self._fmt_size(size)
+                file_item = QTreeWidgetItem([name, size_str])
+                file_item.setExpanded(False)
+                for path in paths:
+                    child = QTreeWidgetItem([path, size_str])
+                    child.setData(0, Qt.ItemDataRole.UserRole, path)
+                    file_item.addChild(child)
+                pair_item.addChild(file_item)
+
+            self._tree.addTopLevelItem(pair_item)
 
     def _on_double_click(self, item: QTreeWidgetItem, _col: int):
         path = item.data(0, Qt.ItemDataRole.UserRole)
         if path and self._on_navigate:
-            self._on_navigate(path)
+            self._do_navigate(path)
 
     def _navigate_selected(self):
         item = self._tree.currentItem()
         if item:
             path = item.data(0, Qt.ItemDataRole.UserRole)
             if path and self._on_navigate:
-                self._on_navigate(path)
+                self._do_navigate(path)
+
+    def _do_navigate(self, path: str):
+        search_dlg = self.parent()
+        if search_dlg:
+            search_dlg.close()   # 關掉深度搜尋，分析視窗繼續浮著
+        self._on_navigate(path)
+
+    # ── deletion ───────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _item_level(item: QTreeWidgetItem) -> int:
+        """0 = folder-pair, 1 = file-group, 2 = leaf file path."""
+        if item.data(0, Qt.ItemDataRole.UserRole) is not None:
+            return 2
+        return 0 if item.parent() is None else 1
+
+    def _on_selection_changed(self, current: QTreeWidgetItem, _prev):
+        is_leaf = current is not None and current.data(0, Qt.ItemDataRole.UserRole) is not None
+        self._del_btn.setEnabled(is_leaf)
+        self._nav_btn.setEnabled(is_leaf)
+
+    def _on_context_menu(self, pos):
+        item = self._tree.itemAt(pos)
+        if not item:
+            return
+        level = self._item_level(item)
+        menu = QMenu(self)
+        if level == 2:
+            trash_act = menu.addAction("🗑 移至資源回收筒")
+            nav_act   = menu.addAction("📂 導航至此路徑")
+            chosen = menu.exec(self._tree.viewport().mapToGlobal(pos))
+            if chosen == trash_act:
+                self._do_delete(item)
+            elif chosen == nav_act:
+                path = item.data(0, Qt.ItemDataRole.UserRole)
+                if path and self._on_navigate:
+                    self._do_navigate(path)
+        elif level == 1:
+            n = item.childCount()
+            del_act = menu.addAction(f"🗑 刪除此群組全部 {n} 個副本")
+            chosen = menu.exec(self._tree.viewport().mapToGlobal(pos))
+            if chosen == del_act:
+                self._do_delete_group(item)
+        else:
+            total = sum(item.child(j).childCount() for j in range(item.childCount()))
+            del_act = menu.addAction(f"🗑 刪除此資料夾對全部 {total} 個檔案")
+            chosen = menu.exec(self._tree.viewport().mapToGlobal(pos))
+            if chosen == del_act:
+                self._do_delete_pair(item)
+
+    def _delete_selected(self):
+        item = self._tree.currentItem()
+        if item and item.data(0, Qt.ItemDataRole.UserRole) is not None:
+            self._do_delete(item)
+
+    def _do_delete(self, item: QTreeWidgetItem):
+        path = item.data(0, Qt.ItemDataRole.UserRole)
+        if not path:
+            return
+        if not os.path.exists(path):
+            # File already gone — just remove from tree silently
+            pass
+        else:
+            try:
+                import send2trash
+                send2trash.send2trash(path)
+            except Exception as e:
+                QMessageBox.warning(self, "刪除失敗", f"{os.path.basename(path)}\n\n{e}")
+                return
+
+        # Remove leaf from file-group node
+        file_item = item.parent()
+        if file_item:
+            file_item.removeChild(item)
+            # If file group has only 1 copy left → no longer duplicate, remove group
+            if file_item.childCount() < 2:
+                pair_item = file_item.parent()
+                if pair_item:
+                    pair_item.removeChild(file_item)
+                    # If folder pair has no groups left, remove pair
+                    if pair_item.childCount() == 0:
+                        idx = self._tree.indexOfTopLevelItem(pair_item)
+                        self._tree.takeTopLevelItem(idx)
+        self._update_summary()
+
+    def _do_delete_group(self, file_item: QTreeWidgetItem):
+        """Delete all file copies under a file-group node (level 1)."""
+        n = file_item.childCount()
+        name = file_item.text(0)
+        reply = QMessageBox.question(
+            self, "確認刪除群組",
+            f"確定要將「{name}」的全部 {n} 個副本移至資源回收筒？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        import send2trash
+        failed = []
+        for i in range(n - 1, -1, -1):
+            child = file_item.child(i)
+            path = child.data(0, Qt.ItemDataRole.UserRole)
+            if path and os.path.exists(path):
+                try:
+                    send2trash.send2trash(path)
+                except Exception as e:
+                    failed.append(f"{os.path.basename(path)}: {e}")
+        if failed:
+            QMessageBox.warning(self, "部分刪除失敗", "\n".join(failed))
+        pair_item = file_item.parent()
+        if pair_item:
+            pair_item.removeChild(file_item)
+            if pair_item.childCount() == 0:
+                self._tree.takeTopLevelItem(self._tree.indexOfTopLevelItem(pair_item))
+        self._update_summary()
+
+    def _do_delete_pair(self, pair_item: QTreeWidgetItem):
+        """Delete every file under a folder-pair node (level 0)."""
+        group_count = pair_item.childCount()
+        total = sum(pair_item.child(j).childCount() for j in range(group_count))
+        reply = QMessageBox.question(
+            self, "確認刪除資料夾對",
+            f"確定要將此資料夾對的 {group_count} 組、共 {total} 個檔案全部移至資源回收筒？\n\n{pair_item.toolTip(0)}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        import send2trash
+        failed = []
+        for j in range(group_count):
+            file_item = pair_item.child(j)
+            for k in range(file_item.childCount()):
+                path = file_item.child(k).data(0, Qt.ItemDataRole.UserRole)
+                if path and os.path.exists(path):
+                    try:
+                        send2trash.send2trash(path)
+                    except Exception as e:
+                        failed.append(f"{os.path.basename(path)}: {e}")
+        if failed:
+            QMessageBox.warning(self, "部分刪除失敗", "\n".join(failed))
+        self._tree.takeTopLevelItem(self._tree.indexOfTopLevelItem(pair_item))
+        self._update_summary()
+
+    def _update_summary(self):
+        pairs  = self._tree.topLevelItemCount()
+        groups = sum(self._tree.topLevelItem(i).childCount() for i in range(pairs))
+        files  = sum(
+            self._tree.topLevelItem(i).child(j).childCount()
+            for i in range(pairs)
+            for j in range(self._tree.topLevelItem(i).childCount())
+        )
+        if groups == 0:
+            empty = self._config_mgr.get_text("ui_dup_analysis_empty", "未找到重複檔案") if self._config_mgr else "未找到重複檔案"
+            self._status_label.setText(empty)
+        else:
+            self._status_label.setText(f"找到 {pairs} 個資料夾對，{groups} 組重複，共 {files} 個檔案")
 
     def closeEvent(self, event):
         if self._worker and self._worker.isRunning():

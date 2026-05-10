@@ -1,6 +1,34 @@
 import ctypes
 from ctypes import wintypes
 import os
+import threading
+
+# Known virtual/phone/cloud path segments that should never be accessed at startup
+_VIRTUAL_PATH_SEGMENTS = (
+    os.sep + "CrossDevice" + os.sep,
+    os.sep + "CrossDevice",
+)
+
+def is_virtual_path(path: str) -> bool:
+    """True if path is a known phone/cloud virtual folder — skip without I/O."""
+    p = os.path.normpath(path).lower()
+    return any(seg.lower() in p for seg in _VIRTUAL_PATH_SEGMENTS)
+
+
+def path_exists_fast(path: str, timeout: float = 1.5) -> bool:
+    """os.path.exists with timeout — skips virtual paths and slow drives immediately."""
+    if is_virtual_path(path):
+        return False
+    result = [False]
+    ev = threading.Event()
+    def _check():
+        try:
+            result[0] = os.path.exists(path)
+        except Exception:
+            pass
+        ev.set()
+    threading.Thread(target=_check, daemon=True).start()
+    return ev.wait(timeout) and result[0]
 
 # Windows API Constants
 WTS_CURRENT_SERVER_HANDLE = 0

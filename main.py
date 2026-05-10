@@ -1,12 +1,26 @@
 import sys
 import os
 import logging
+import logging.handlers
 import fitz # Force PyInstaller to detect PyMuPDF
 import send2trash # Force PyInstaller to detect send2trash
 
-# Configure logging: Default to WARNING to hide debug noise in production
-logging.basicConfig(level=logging.WARNING, 
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Log file: %LOCALAPPDATA%\SHL\<app>\app.log
+_log_dir = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "SHL", "DualPaneFileManager")
+os.makedirs(_log_dir, exist_ok=True)
+_log_path = os.path.join(_log_dir, "app.log")
+
+_fmt = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+_file_handler = logging.handlers.RotatingFileHandler(
+    _log_path, maxBytes=2 * 1024 * 1024, backupCount=2, encoding="utf-8")
+_file_handler.setFormatter(_fmt)
+_file_handler.setLevel(logging.INFO)
+
+_console_handler = logging.StreamHandler()
+_console_handler.setFormatter(_fmt)
+_console_handler.setLevel(logging.WARNING)   # console 仍只顯示 WARNING+
+
+logging.basicConfig(level=logging.INFO, handlers=[_file_handler, _console_handler])
 logger = logging.getLogger(__name__)
 
 try:

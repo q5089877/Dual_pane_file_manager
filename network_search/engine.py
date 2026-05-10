@@ -338,43 +338,58 @@ class IndexManager:
             logging.error(f"Search error: {e}")
             return []
 
-    def find_duplicates_by_size(self, min_size: int = 1024, limit: int = 2000) -> list[tuple[int, str, str]]:
-        """Returns (size, name, full_path) for files sharing size with ≥1 other file in the index."""
+    def find_duplicates(self, limit: int = 10000) -> list[tuple[str, int, str, float]]:
+        """Returns (name, size, full_path, mtime) for files sharing name+size in different folders."""
         self._ensure_latest_shared_db()
         if not self.conn:
             return []
 
         source_parts = [
-            "SELECT f.size, f.name, d.path || '\\' || f.name AS full_path"
+            "SELECT f.name, f.size, d.path || '\\' || f.name AS full_path, f.mtime"
             " FROM main.files_index f JOIN main.folders d ON f.folder_id = d.id"
-            " WHERE f.size >= ?"
+            " WHERE f.size > 0"
         ]
-        params: list = [min_size]
 
         if self.current_shared_slot:
             source_parts.append(
-                "SELECT f.size, f.name, d.path || '\\' || f.name AS full_path"
+                "SELECT f.name, f.size, d.path || '\\' || f.name AS full_path, f.mtime"
                 " FROM shared_db.files_index f JOIN shared_db.folders d ON f.folder_id = d.id"
-                " WHERE f.size >= ?"
+                " WHERE f.size > 0"
             )
-            params.append(min_size)
+
+        # Include personal.db (local C: drive index)
+        if getattr(self, 'personal_db_path', None) and self.personal_db_path.exists():
+            try:
+                self.conn.execute("ATTACH DATABASE ? AS personal_db", (str(self.personal_db_path),))
+            except Exception:
+                pass
+            source_parts.append(
+                "SELECT f.name, f.size, d.path || '\\' || f.name AS full_path, f.mtime"
+                " FROM personal_db.files_index f JOIN personal_db.folders d ON f.folder_id = d.id"
+                " WHERE f.size > 0"
+            )
 
         union_sql = " UNION ".join(source_parts)  # UNION deduplicates same file indexed in both main+shared_db
         sql = (
             f"WITH all_files AS ({union_sql}),"
-            " dup_sizes AS (SELECT size FROM all_files GROUP BY size HAVING COUNT(*) > 1)"
-            " SELECT a.size, a.name, a.full_path"
-            " FROM all_files a JOIN dup_sizes ds ON a.size = ds.size"
-            " ORDER BY a.size DESC, a.full_path LIMIT ?"
+            " dup_keys AS ("
+            "   SELECT name, size FROM all_files"
+            "   GROUP BY name, size HAVING COUNT(DISTINCT full_path) > 1"
+            " )"
+            " SELECT a.name, a.size, a.full_path, a.mtime"
+            " FROM all_files a JOIN dup_keys dk ON a.name = dk.name AND a.size = dk.size"
+            " ORDER BY a.size DESC, a.name, a.full_path LIMIT ?"
         )
-        params.append(limit)
 
         try:
             cursor = self.conn.cursor()
-            cursor.execute(sql, params)
-            return cursor.fetchall()
+            logger.info(f"[DupAnalysis] DB query: sources={len(source_parts)} db(s), limit={limit}")
+            cursor.execute(sql, [limit])
+            rows = cursor.fetchall()
+            logger.info(f"[DupAnalysis] DB query returned {len(rows)} rows")
+            return rows
         except Exception as e:
-            logging.error(f"find_duplicates_by_size error: {e}")
+            logger.error(f"find_duplicates error: {e}")
             return []
 
     def update_folder(self, folder_path, mtime, files, conn=None):

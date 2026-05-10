@@ -1,5 +1,6 @@
 import os
 import fnmatch
+from core.system_utils import path_exists_fast as _path_exists_fast
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QToolButton, QPushButton,
     QStackedWidget, QMessageBox, QLabel, QFrame, QTreeView, QAbstractItemView,
@@ -1000,7 +1001,7 @@ class ExplorerPane(QWidget):
     def _restore_root_from_path(self):
         text = self.search_edit.text()
         curr_path = self.path_edit.text()
-        if curr_path and os.path.exists(curr_path):
+        if curr_path and _path_exists_fast(curr_path):
             idx = self.model.index(curr_path)
             self.tree.setRootIndex(self.proxy_model.mapFromSource(idx))
             self.list_view.setRootIndex(self.list_proxy.mapFromSource(idx))

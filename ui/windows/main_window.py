@@ -15,7 +15,7 @@ from ui.panes.explorer_pane import ExplorerPane
 from core.config_manager import ConfigManager
 from core.interfaces import IMainWindowView
 from ui.presenters.main_window_presenter import MainWindowPresenter
-from core.system_utils import is_computer_locked
+from core.system_utils import is_computer_locked, path_exists_fast as _path_exists_fast
 
 
 class _TrashDropButton(QToolButton):
@@ -201,7 +201,7 @@ class MainWindow(QMainWindow):
             self._shared_index_manager = None
 
         self._init_ui()
-        self._restore_tabs()
+        QTimer.singleShot(0, self._restore_tabs)
         self._init_shortcuts()
 
         # Presenter wired after UI exists
@@ -342,7 +342,7 @@ class MainWindow(QMainWindow):
                 "ui_main_toast_tab_limit", "最多 5 個分頁"), "warning")
             return
         from ui.presenters.explorer_presenter import HOME_PATH
-        if path != HOME_PATH and (not path or not os.path.exists(path)):
+        if path != HOME_PATH and (not path or not _path_exists_fast(path)):
             path = QStandardPaths.writableLocation(
                 QStandardPaths.StandardLocation.DesktopLocation)
         pane = ExplorerPane(path, self.config_mgr, self)
@@ -651,6 +651,7 @@ class MainWindow(QMainWindow):
 
         deep_btn = QToolButton()
         deep_btn.setText(self.config_mgr.get_text("ui_pane_btn_deep_search", "深度搜尋"))
+        deep_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("search")))
         deep_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         deep_btn.setToolTip(self.config_mgr.get_text("ui_pane_tooltip_deep_search", "深度搜尋（索引 / 內容）"))
         deep_btn.setObjectName("deepSearchBtn")
