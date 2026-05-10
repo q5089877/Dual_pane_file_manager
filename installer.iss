@@ -6,7 +6,8 @@ AppPublisher=SHL
 ; 預設安裝在 %USERPROFILE%\DevRepositories\SHL\DualPaneApp
 ; 符合公司規定路徑，使用者仍可在安裝時修改
 DefaultDirName={%USERPROFILE}\DevRepositories\SHL\DualPaneApp
-DisableDirPage=no
+DisableDirPage=yes
+DisableProgramGroupPage=yes
 DefaultGroupName=DualPaneFileManager
 OutputBaseFilename=DualPaneFileManager_SHL_Setup
 Compression=lzma

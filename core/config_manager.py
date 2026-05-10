@@ -7,7 +7,7 @@ from pathlib import Path
 
 class ConfigManager:
     """Handles application configuration and theme loading."""
-    APP_VERSION = "1.1.1"
+    APP_VERSION = "1.2.0"
     GITHUB_REPO  = "q5089877/Dual_pane_file_manager"
     _DEFAULT_UPDATE_SUFFIX = ""
     _DEFAULT_REMOTE_INDEX_SUFFIX = ""
@@ -400,7 +400,7 @@ class ConfigManager:
             "nightly_scan_minute":   maint.get("nightly_scan_minute", 0),
             "pdf_preview_max_pages": config.get("pdf_preview_max_pages", 3),
             "confirm_before_delete": config.get("confirm_before_delete", True),
-            "preview_font_size":     config.get("preview_font_size", 13),
+            "preview_font_size":     config.get("preview_font_size", 14),
             "image_prefix":          paste.get("image_prefix", "剪貼圖"),
             "text_prefix":           paste.get("text_prefix", "文字筆記"),
             "image_format":          paste.get("image_format", "%Y%m%d_%H%M%S"),

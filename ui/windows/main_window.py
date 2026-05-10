@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QTabBar, QFileDialog, QMenu, QLabel, QDialog,
     QGraphicsOpacityEffect, QToolButton
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QStandardPaths, QPoint, QTimer, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QStandardPaths, QPoint, QTimer, QSize, QThread
 from PyQt6.QtGui import QAction, QShortcut, QKeySequence, QIcon
 
 from ui.widgets.tabs import CustomTabWidget
@@ -15,7 +15,7 @@ from ui.panes.explorer_pane import ExplorerPane
 from core.config_manager import ConfigManager
 from core.interfaces import IMainWindowView
 from ui.presenters.main_window_presenter import MainWindowPresenter
-from core.system_utils import is_computer_locked, path_exists_fast as _path_exists_fast
+from core.system_utils import get_user_idle_time_ms, path_exists_fast as _path_exists_fast
 
 
 class _TrashDropButton(QToolButton):
@@ -165,6 +165,16 @@ class _MainWindowViewAdapter(IMainWindowView):
             pass
 
 
+class _QuickAccessWorker(QThread):
+    """Fetches Windows Quick Access paths in a background thread to avoid blocking UI startup."""
+    paths_ready = pyqtSignal(list)
+
+    def run(self) -> None:
+        from core.file_ops import FileOps
+        paths = FileOps.get_win_quick_access_paths()
+        self.paths_ready.emit(paths[:5] if paths else [])
+
+
 class MainWindow(QMainWindow):
     """Main application window. Pure View Adapter — all logic delegated to MainWindowPresenter."""
     file_operation_finished = pyqtSignal()
@@ -222,8 +232,8 @@ class MainWindow(QMainWindow):
         self.nightly_scanner_worker = None
         self._update_worker = None
 
-        # 啟動 5 秒後進行更新檢查 (非同步)
-        QTimer.singleShot(5000, self._start_update_check)
+        # 啟動 10 秒後進行更新檢查 (非同步，讓 UI 充分渲染後才連網)
+        QTimer.singleShot(10000, self._start_update_check)
 
     def _on_file_op_finished(self):
         # Add a 500ms delay before refreshing the UI.
@@ -287,7 +297,6 @@ class MainWindow(QMainWindow):
         self.refresh_toolbar()
 
     def _restore_tabs(self):
-        from core.file_ops import FileOps
         from ui.presenters.explorer_presenter import HOME_PATH
         def_path = QStandardPaths.writableLocation(
             QStandardPaths.StandardLocation.DesktopLocation)
@@ -298,12 +307,11 @@ class MainWindow(QMainWindow):
             l_paths = self.config.get("left_tabs") or [def_path]
             r_paths = self.config.get("right_tabs") or [def_path]
 
-        # 若兩側都只有桌面，以 Quick Access 取代右側，左側改為本機視圖
+        # 若兩側都只有桌面，左側改本機視圖，右側先顯示桌面，待背景 worker 取回 Quick Access 後替換
         both_desktop = (l_paths == [def_path] and r_paths == [def_path])
         if both_desktop:
-            qa_paths = FileOps.get_win_quick_access_paths()
             l_paths = [HOME_PATH]
-            r_paths = qa_paths[:5] if qa_paths else [def_path]
+            r_paths = [def_path]
 
         for p in l_paths:
             self.add_new_tab(self.left_tabs, p)
@@ -312,6 +320,22 @@ class MainWindow(QMainWindow):
         sizes = self.config.get("splitter_sizes")
         if sizes and len(sizes) == 2 and sum(sizes) > 0:
             self.splitter.setSizes(sizes)
+
+        if both_desktop:
+            self._qa_worker = _QuickAccessWorker()
+            self._qa_worker.paths_ready.connect(self._on_quick_access_ready)
+            self._qa_worker.start()
+
+    def _on_quick_access_ready(self, qa_paths: list[str]) -> None:
+        if not qa_paths:
+            return
+        while self.right_tabs.count() > 0:
+            widget = self.right_tabs.widget(0)
+            self.right_tabs.removeTab(0)
+            if widget:
+                widget.deleteLater()
+        for p in qa_paths:
+            self.add_new_tab(self.right_tabs, p)
 
     def _init_shortcuts(self):
         # Tab 鍵：區域循環切換分頁
@@ -354,7 +378,7 @@ class MainWindow(QMainWindow):
         pane.path_edit.textChanged.connect(lambda: self.update_tab_ui())
         pane.close_preview_requested.connect(self.close_inline_preview)
         pane.home_requested.connect(lambda p=pane: p.set_path(HOME_PATH))
-        pane.custom_paths_requested.connect(self._show_pane_custom_paths_popup)
+        pane.custom_paths_requested.connect(self._show_favorites_menu_at)
 
         tab_label = self.config_mgr.get_text("ui_pane_label_home", "本機") if path == HOME_PATH else (
             os.path.basename(path) or path or self.config_mgr.get_text("ui_pane_label_home", "本機"))
@@ -391,10 +415,10 @@ class MainWindow(QMainWindow):
 
         if path and os.path.exists(path):
             menu.addSeparator()
-            bookmark_tpl = self.config_mgr.get_text(
-                "ui_main_menu_add_bookmark", "將「{}」新增至書籤") if self.config_mgr else "將「{}」新增至書籤"
-            menu.addAction(bookmark_tpl.format(os.path.basename(path) or path)).triggered.connect(
-                lambda: self.on_quick_add_path(path)
+            fav_tpl = self.config_mgr.get_text(
+                "ui_main_menu_add_bookmark", "將「{}」加入我的最愛...") if self.config_mgr else "將「{}」加入我的最愛..."
+            menu.addAction(fav_tpl.format(os.path.basename(path) or path)).triggered.connect(
+                lambda: self._add_path_to_favorites(path)
             )
             menu.addSeparator()
             tree_txt = self.config_mgr.get_text(
@@ -471,10 +495,10 @@ class MainWindow(QMainWindow):
         self._internal_save_config()
 
     def _on_system_timer_tick(self):
-        # 這裡可以加入 Windows API 偵測是否鎖屏，目前依建議先傳 False 或使用現有的偵測
-        locked = is_computer_locked()
+        idle_ms = get_user_idle_time_ms()
+        idle_minutes = idle_ms // 60000
         if hasattr(self, "presenter"):
-            self.presenter.on_system_tick(locked)
+            self.presenter.on_system_tick(idle_minutes)
 
     def _start_idle_c_scan(self):
         if self.idle_scanner_worker and getattr(self.idle_scanner_worker, "isRunning", lambda: False)():
@@ -636,19 +660,6 @@ class MainWindow(QMainWindow):
 
         self.tool_bar.addSeparator()
 
-        # ── 常用路徑 ────────────────────────────────────────────
-        fav_btn = QToolButton()
-        fav_btn.setText(self.config_mgr.get_text("ui_main_btn_favorites", "常用"))
-        fav_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("star")))
-        fav_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        fav_btn.setToolTip(self.config_mgr.get_text(
-            "ui_main_btn_favorites_tooltip", "常用路徑"))
-        fav_btn.setObjectName("favoritesBtn")
-        fav_btn.clicked.connect(self._show_favorites_menu)
-        self.tool_bar.addWidget(fav_btn)
-
-        self.tool_bar.addSeparator()
-
         deep_btn = QToolButton()
         deep_btn.setText(self.config_mgr.get_text("ui_pane_btn_deep_search", "深度搜尋"))
         deep_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("search")))
@@ -692,11 +703,6 @@ class MainWindow(QMainWindow):
         settings_btn.setObjectName("settingsBtn")
         settings_btn.clicked.connect(self.on_settings_clicked)
         self.tool_bar.addWidget(settings_btn)
-
-    def _show_pane_custom_paths_popup(self, pos: QPoint) -> None:
-        self.path_popup.populate(self.custom_paths)
-        self.path_popup.move(pos)
-        self.path_popup.show()
 
     def on_settings_clicked(self) -> None:
         from ui.widgets.app_settings_dialog import AppSettingsDialog
@@ -1323,10 +1329,8 @@ class MainWindow(QMainWindow):
 
     # ── Favorites ─────────────────────────────────────────────────────────────
 
-    def _show_favorites_menu(self) -> None:
-        from PyQt6.QtWidgets import QToolButton
+    def _build_favorites_menu(self) -> QMenu:
         menu = QMenu(self)
-
         favorites = self.config_mgr.get_favorites()
         if favorites:
             for entry in favorites:
@@ -1343,7 +1347,6 @@ class MainWindow(QMainWindow):
             empty_act = menu.addAction(
                 self.config_mgr.get_text("ui_favorites_empty", "(尚無常用路徑)"))
             empty_act.setEnabled(False)
-
         menu.addSeparator()
         add_act = menu.addAction(
             self.config_mgr.get_text("ui_favorites_add_current", "➕ 將目前路徑加入常用..."))
@@ -1351,51 +1354,51 @@ class MainWindow(QMainWindow):
         manage_act = menu.addAction(
             self.config_mgr.get_text("ui_favorites_manage", "✏️ 管理常用路徑..."))
         manage_act.triggered.connect(self._open_favorites_manager)
+        return menu
 
-        fav_btn = None
-        for w in self.tool_bar.findChildren(QToolButton):
-            if w.objectName() == "favoritesBtn":
-                fav_btn = w
-                break
-        pos = fav_btn.mapToGlobal(
-            QPoint(0, fav_btn.height())) if fav_btn else self.mapToGlobal(QPoint(0, 40))
-        menu.exec(pos)
+    def _show_favorites_menu(self) -> None:
+        from PyQt6.QtGui import QCursor
+        self._build_favorites_menu().exec(QCursor.pos())
+
+    def _show_favorites_menu_at(self, pos: QPoint) -> None:
+        """Slot for pane toolbar star button — shows favorites at the given position."""
+        self._build_favorites_menu().exec(pos)
 
     def _navigate_to_favorite(self, path: str) -> None:
         pane = getattr(self, "active_pane", None)
         if pane and hasattr(pane, "set_path"):
             pane.set_path(path)
 
-    def _add_current_path_to_favorites(self) -> None:
+    def _add_path_to_favorites(self, path: str) -> None:
         from PyQt6.QtWidgets import QInputDialog
+        if not path or not os.path.isdir(path):
+            return
+        favorites = self.config_mgr.get_favorites()
+        group_names = [e["group"] for e in favorites]
+        title = self.config_mgr.get_text("ui_favorites_add_current_title", "加入常用路徑")
+        label = self.config_mgr.get_text("ui_favorites_select_group", "選擇或輸入群組名稱：")
+        group, ok = QInputDialog.getItem(
+            self, title, label, group_names or ["常用"], editable=True)
+        if not ok or not group.strip():
+            return
+        group = group.strip()
+        for entry in favorites:
+            if entry["group"] == group:
+                if path not in entry["paths"]:
+                    entry["paths"].append(path)
+                self.config_mgr.save_favorites(favorites)
+                return
+        favorites.append({"group": group, "paths": [path]})
+        self.config_mgr.save_favorites(favorites)
+
+    def _add_current_path_to_favorites(self) -> None:
         pane = getattr(self, "active_pane", None)
         if not pane:
             return
         current = getattr(pane, "_current_path", "") or ""
         if not current or current == "home://":
             return
-
-        favorites = self.config_mgr.get_favorites()
-        group_names = [e["group"] for e in favorites]
-
-        title = self.config_mgr.get_text("ui_favorites_add_current_title", "加入常用路徑")
-        label = self.config_mgr.get_text("ui_favorites_select_group", "選擇或輸入群組名稱：")
-        group, ok = QInputDialog.getItem(
-            self, title, label, group_names or ["常用"],
-            editable=True)
-        if not ok or not group.strip():
-            return
-        group = group.strip()
-
-        for entry in favorites:
-            if entry["group"] == group:
-                if current not in entry["paths"]:
-                    entry["paths"].append(current)
-                self.config_mgr.save_favorites(favorites)
-                return
-
-        favorites.append({"group": group, "paths": [current]})
-        self.config_mgr.save_favorites(favorites)
+        self._add_path_to_favorites(current)
 
     def _open_favorites_manager(self) -> None:
         from ui.widgets.favorites_dialog import FavoritesDialog

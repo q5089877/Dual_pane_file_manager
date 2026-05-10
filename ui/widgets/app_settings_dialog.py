@@ -312,7 +312,7 @@ class AppSettingsDialog(QDialog):
         # 預覽字體
         self._preview_font_spin = QSpinBox()
         self._preview_font_spin.setRange(9, 24)
-        self._preview_font_spin.setValue(s.get("preview_font_size", 13))
+        self._preview_font_spin.setValue(s.get("preview_font_size", 14))
         self._preview_font_spin.setSuffix(" px")
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_preview_font", "預覽字體大小："),
                  self._preview_font_spin)

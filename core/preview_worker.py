@@ -30,7 +30,7 @@ def _html_escape(text: str) -> str:
                 .replace('"', "&quot;"))
 
 
-_preview_font_size: int = 13  # module-level，由 generate_preview 在執行前設定
+_preview_font_size: int = 14  # module-level，由 generate_preview 在執行前設定
 
 
 def _base_html(body: str, extra_head: str = "", font_size: int | None = None) -> str:

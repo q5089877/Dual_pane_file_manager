@@ -617,7 +617,7 @@ class ExplorerPane(QWidget):
 
         self.custom_paths_btn = QToolButton()
         self.custom_paths_btn.setObjectName("paneCustomPathsBtn")
-        self.custom_paths_btn.setToolTip(self.config_mgr.get_text("ui_pane_tooltip_bookmarks", "書籤") if self.config_mgr else "書籤")
+        self.custom_paths_btn.setToolTip(self.config_mgr.get_text("ui_pane_tooltip_bookmarks", "我的最愛") if self.config_mgr else "我的最愛")
         self.custom_paths_btn.clicked.connect(
             lambda: self.custom_paths_requested.emit(
                 self.custom_paths_btn.mapToGlobal(

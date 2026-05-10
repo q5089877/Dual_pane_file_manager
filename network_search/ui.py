@@ -15,7 +15,6 @@ import json
 import sys
 import logging
 from pathlib import Path
-from core.system_utils import is_computer_locked
 
 logger = logging.getLogger(__name__)
 
@@ -282,14 +281,7 @@ class NetworkSearchWindow(QWidget):
         # 背景掃描相關狀態
         self.is_master = self.config.get("is_master_node", False)
         self.active_workers = [] # 防止被 GC
-        # 初始化時先執行一次檢查，避免啟動時因為 False->True 觸發誤判
-        self.was_locked_last_check = is_computer_locked() 
-        self.lock_check_timer = QTimer(self)
-        self.lock_check_timer.timeout.connect(self.check_lock_state)
-        
-        if self.is_master:
-            self.lock_check_timer.start(60000) # 每 60 秒檢查一次系統狀態
-        
+
         # Pillar 1 Sync: On start, sync from remote
         self._sync_on_start()
         self.update_status_bar()
@@ -358,23 +350,6 @@ class NetworkSearchWindow(QWidget):
                 elif status == 'INTERRUPTED':
                     self.search_status_label.setText(f" 🛑 上次掃描已中斷 (已索引 {total} 檔案) ")
                     self.search_status_label.setStyleSheet("background-color: #7f8c8d; color: #ffffff; padding: 4px 12px; border-radius: 4px; font-weight: bold;")
-
-    def check_lock_state(self):
-        """偵測電腦鎖定狀態並決定是否啟動背景掃描"""
-        currently_locked = is_computer_locked()
-        
-        # 1. 剛被鎖定 -> 啟動背景掃描 (偷偷執行)
-        if currently_locked and not self.was_locked_last_check:
-            logger.info("🕒 [背景] 偵測到電腦已鎖定，準備啟動背景掃描...")
-            self.on_refresh_clicked(is_background=True)
-            
-        # 2. 剛被解鎖 -> 使用者回來了，立即煞車！
-        elif not currently_locked and self.was_locked_last_check:
-            if self.scanner and self.scanner.isRunning():
-                logger.info("👁️ [背景] 偵測到使用者回來了！正在中止背景掃描以維持流暢度...")
-                self.scanner.cancel()
-            
-        self.was_locked_last_check = currently_locked
 
     def _init_ui(self):
         self.setWindowTitle("網路搜尋獨立模組 (Network Search)")
@@ -542,12 +517,6 @@ class NetworkSearchWindow(QWidget):
                 self.engine.current_shared_slot = None # 重置連線，強制下次搜尋重連
                 
             self.is_master = self.config.get("is_master_node", False)
-            if self.is_master:
-                if not self.lock_check_timer.isActive():
-                    self.lock_check_timer.start(60000)
-            else:
-                self.lock_check_timer.stop()
-                
             self.update_status_bar()
 
     def on_search_text_changed(self, text):

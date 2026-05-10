@@ -61,6 +61,21 @@ def is_computer_locked():
     except Exception:
         return False
 
+def get_user_idle_time_ms() -> int:
+    """Returns milliseconds elapsed since the last keyboard or mouse input."""
+    try:
+        class _LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+        lii = _LASTINPUTINFO()
+        lii.cbSize = ctypes.sizeof(_LASTINPUTINFO)
+        if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+            tick_now = ctypes.windll.kernel32.GetTickCount()
+            return int((tick_now - lii.dwTime) % (2 ** 32))
+        return 0
+    except Exception:
+        return 0
+
+
 def set_current_thread_priority_low():
     """
     Lowers the priority of the current thread to background level.

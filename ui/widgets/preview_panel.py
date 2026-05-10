@@ -313,9 +313,9 @@ class PreviewPanel(QWidget):
         # NOT in layout — covers _web area via resizeEvent
         self._text_edit = QPlainTextEdit(self)
         self._text_edit.setObjectName("previewTextEdit")
-        font_size = 13
+        font_size = 14
         if self.config_mgr:
-            font_size = self.config_mgr.load_config().get("preview_font_size", 13)
+            font_size = self.config_mgr.load_config().get("preview_font_size", 14)
         bg = "#1e1e2e"
         fg = "#c9d1d9"
         if self.config_mgr:
@@ -647,7 +647,7 @@ class PreviewPanel(QWidget):
             self._show_loading()
         _cfg = self.config_mgr.load_config() if self.config_mgr else {}
         _pdf_max = _cfg.get("pdf_preview_max_pages", 3)
-        _font_size = _cfg.get("preview_font_size", 13)
+        _font_size = _cfg.get("preview_font_size", 14)
         self._current_worker = PreviewThread(
             self._pending_path, pdf_max_pages=_pdf_max, font_size=_font_size, pdf_dpi=self._dpi_scale, parent=self)
         self._current_worker.html_ready.connect(self._on_html_ready)

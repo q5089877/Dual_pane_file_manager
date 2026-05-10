@@ -142,10 +142,10 @@ class QuickLookDialog(QDialog):
         self.text_edit = QPlainTextEdit()
         self.text_edit.setReadOnly(True)
         text_color = "#e0e0e0"
-        _font_size = 13
+        _font_size = 14
         if self.config_mgr:
             text_color = self.config_mgr.get_theme_colors().get("text", text_color)
-            _font_size = self.config_mgr.load_config().get("preview_font_size", 13)
+            _font_size = self.config_mgr.load_config().get("preview_font_size", 14)
         self.text_edit.setStyleSheet(f"""
             QPlainTextEdit {{
                 background-color: transparent;

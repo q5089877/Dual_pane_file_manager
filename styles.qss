@@ -788,7 +788,7 @@ QToolButton#backBtn        { image: url(ui/left_arrow.svg); }
 QToolButton#forwardBtn     { image: url(ui/right_arrow.svg); }
 QToolButton#upBtn          { image: url(ui/up_arrow.svg); }
 QToolButton#paneHomeBtn    { image: url(ui/home.svg); }
-QToolButton#paneCustomPathsBtn { image: url(ui/bookmark.svg); }
+QToolButton#paneCustomPathsBtn { image: url(ui/star.svg); }
 QToolButton#listViewBtn    { image: url(ui/list_view.svg); }
 QToolButton#gridViewBtn    { image: url(ui/grid_view.svg); }
 QToolButton#advSearchBtn   { image: url(ui/filter.svg); }

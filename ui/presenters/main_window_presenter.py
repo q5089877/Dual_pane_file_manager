@@ -14,7 +14,7 @@ class MainWindowPresenter:
     def __init__(self, view: IMainWindowView, config_mgr: ConfigManager = None):
         self.view = view
         self.config_mgr = config_mgr or ConfigManager()
-        self.locked_minutes = 0
+        self._scan_triggered = False
         self.daily_k_scan_done = False
 
     # ------------------------------------------
@@ -61,24 +61,23 @@ class MainWindowPresenter:
     # ------------------------------------------
     # Maintenance & Background Scanning Logic (MVP: Business Logic)
     # ------------------------------------------
-    def on_system_tick(self, is_locked: bool):
+    def on_system_tick(self, idle_minutes: int):
         """
         每分鐘觸發一次的維護檢核邏輯。
         負責決定何時啟動本機閒置掃描與夜間網域同步。
         """
         settings = self.config_mgr.get_maintenance_settings()
         cooldown = settings.get("idle_lock_cooldown_min", 2)
-        
-        # 1. 本機 C 槽閒置掃描控制
-        if is_locked:
-            self.locked_minutes += 1
-            if self.locked_minutes == cooldown:
+
+        # 1. 本機閒置掃描控制：以實際輸入閒置時間判斷，而非螢幕鎖定狀態
+        if idle_minutes >= cooldown:
+            if not self._scan_triggered:
                 self.view.start_background_scan("personal")
+                self._scan_triggered = True
         else:
-            if self.locked_minutes >= cooldown:
-                # 使用者回來了，立即中斷背景掃描以確保操作流暢
+            if self._scan_triggered:
                 self.view.stop_background_scan("personal")
-            self.locked_minutes = 0
+            self._scan_triggered = False
 
         # 2. 網路 K 槽夜間自動更新 (僅 Master Node 負責)
         config = self.config_mgr.load_config()
