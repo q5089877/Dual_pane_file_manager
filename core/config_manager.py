@@ -530,7 +530,7 @@ class ConfigManager:
 
     def save_app_settings(self, settings: dict) -> bool:
         config = self.load_config()
-        top_level_keys = ["restore_last_session", "remote_index_root", "max_depth", "search_limit", "pdf_preview_max_pages", "confirm_before_delete", "preview_font_size", "is_master_node", "monitored_paths", "language"]
+        top_level_keys = ["restore_last_session", "remote_index_root", "max_depth", "search_limit", "pdf_preview_max_pages", "confirm_before_delete", "preview_font_size", "is_master_node", "monitored_paths", "language", "network_scan_depth", "exclude_exts", "exclude_dirs"]
         for key in top_level_keys:
             if key in settings: config[key] = settings[key]
         if "nightly_scan_hour" in settings or "nightly_scan_minute" in settings:

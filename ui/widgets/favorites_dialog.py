@@ -36,7 +36,7 @@ class FavoritesDialog(QDialog):
         lv.setContentsMargins(0, 0, 0, 0)
         lv.setSpacing(4)
         lv.addWidget(QLabel(
-            self._config_mgr.get_text("ui_favorites_add_group", "群組")))
+            self._config_mgr.get_text("ui_favorites_label_groups", "群組")))
         self._group_list = QListWidget()
         self._group_list.currentRowChanged.connect(self._on_group_selected)
         lv.addWidget(self._group_list)
@@ -68,7 +68,7 @@ class FavoritesDialog(QDialog):
         rv.setContentsMargins(0, 0, 0, 0)
         rv.setSpacing(4)
         self._path_label = QLabel(
-            self._config_mgr.get_text("ui_favorites_add_path", "路徑"))
+            self._config_mgr.get_text("ui_favorites_label_paths", "路徑"))
         rv.addWidget(self._path_label)
         self._path_list = QListWidget()
         rv.addWidget(self._path_list)

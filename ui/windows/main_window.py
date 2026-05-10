@@ -649,6 +649,16 @@ class MainWindow(QMainWindow):
 
         self.tool_bar.addSeparator()
 
+        deep_btn = QToolButton()
+        deep_btn.setText(self.config_mgr.get_text("ui_pane_btn_deep_search", "深度搜尋"))
+        deep_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        deep_btn.setToolTip(self.config_mgr.get_text("ui_pane_tooltip_deep_search", "深度搜尋（索引 / 內容）"))
+        deep_btn.setObjectName("deepSearchBtn")
+        deep_btn.clicked.connect(self._open_deep_search)
+        self.tool_bar.addWidget(deep_btn)
+
+        self.tool_bar.addSeparator()
+
         # ── 群組 3：進階功能（低頻）──────────────────────────
         snap_btn = QToolButton()
         snap_btn.setText(self.config_mgr.get_text(
@@ -1391,6 +1401,11 @@ class MainWindow(QMainWindow):
         dlg = FavoritesDialog(self.config_mgr, self)
         dlg.exec()
         self.refresh_toolbar()
+
+    def _open_deep_search(self) -> None:
+        pane = self.active_pane
+        if pane and hasattr(pane, 'open_advanced_search'):
+            pane.open_advanced_search()
 
     def _save_snapshot(self):
         from PyQt6.QtWidgets import QInputDialog

@@ -206,6 +206,32 @@ class AppSettingsDialog(QDialog):
         path_btns.addStretch()
         f_master.addRow(path_btns)
 
+        # 掃描深度
+        self._depth_spin = QSpinBox()
+        self._depth_spin.setRange(1, 20)
+        self._depth_spin.setValue(s.get("network_scan_depth", 7))
+        f_master.addRow(
+            self.config_mgr.get_text("ui_dialog_settings_label_depth", "資料夾搜尋深度 (1-20 層)："),
+            self._depth_spin)
+
+        # 排除副檔名
+        _default_exts = [".tmp", ".bak", ".log", ".cache", ".thumbs", ".db-wal", ".db-shm", ".lock"]
+        _excl_exts = s.get("exclude_exts") or _default_exts
+        self._excl_exts_edit = QLineEdit(", ".join(_excl_exts))
+        self._excl_exts_edit.setPlaceholderText(".tmp, .bak, .log")
+        f_master.addRow(
+            self.config_mgr.get_text("ui_dialog_settings_label_excl_exts", "排除副檔名（逗號分隔）："),
+            self._excl_exts_edit)
+
+        # 排除資料夾關鍵字
+        _default_dirs = ["Archive", "Old", "Temp", "_archive", "Backup", "$RECYCLE.BIN"]
+        _excl_dirs = s.get("exclude_dirs") or _default_dirs
+        self._excl_dirs_edit = QLineEdit(", ".join(_excl_dirs))
+        self._excl_dirs_edit.setPlaceholderText("Archive, Old, Temp")
+        f_master.addRow(
+            self.config_mgr.get_text("ui_dialog_settings_label_excl_dirs", "排除資料夾關鍵字（逗號分隔）："),
+            self._excl_dirs_edit)
+
         f_master.addRow(self._separator())
         f_master.addRow(self._muted_label(
             self.config_mgr.get_text("ui_dialog_settings_nightly_note",
@@ -304,7 +330,7 @@ class AppSettingsDialog(QDialog):
         self._confirm_delete_chk = QCheckBox(
             self.config_mgr.get_text("ui_dialog_settings_confirm_delete", "刪除檔案前顯示確認視窗"))
         self._confirm_delete_chk.setChecked(
-            s.get("confirm_before_delete", True))
+            s.get("confirm_before_delete", False))
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_delete", "刪除防呆："),
                  self._confirm_delete_chk)
 
@@ -407,6 +433,9 @@ class AppSettingsDialog(QDialog):
             "text_format":           self._txt_format_edit.text().strip(),
             "is_master_node":        self._is_master_chk.isChecked(),
             "monitored_paths":       m_paths,
+            "network_scan_depth":    self._depth_spin.value(),
+            "exclude_exts":          [e.strip() for e in self._excl_exts_edit.text().split(",") if e.strip()],
+            "exclude_dirs":          [d.strip() for d in self._excl_dirs_edit.text().split(",") if d.strip()],
             "language":              self._lang_options[self._lang_combo.currentIndex()][1],
         })
         self.theme_changed.emit()

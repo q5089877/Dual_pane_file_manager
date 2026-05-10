@@ -981,3 +981,28 @@ QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
     opacity: 0.5;
 }
 
+/* Preview edit bar */
+QWidget#previewEditBar {
+    background-color: {{headerBg}};
+    border-bottom: 1px solid {{border}};
+}
+
+QWidget#previewEditBar QPushButton {
+    padding: 2px 10px;
+    font-size: 11px;
+    border-radius: 3px;
+}
+
+QWidget#previewEditBar QPushButton#editSaveBtn {
+    color: {{accent}};
+    border: 1px solid {{accent}};
+}
+
+QWidget#previewEditBar QPushButton#editSaveBtn:hover {
+    background-color: {{accentSubtle}};
+}
+
+QWidget#previewEditBar QPushButton#editDiscardBtn {
+    color: {{textMuted}};
+}
+

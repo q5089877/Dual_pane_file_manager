@@ -19,6 +19,7 @@ Architecture:
   The main thread is never blocked by I/O or JPEG decode.
 """
 from __future__ import annotations
+import locale
 import os
 import shutil
 import tempfile
@@ -26,9 +27,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QPushButton
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy,
+    QPushButton, QPlainTextEdit, QMessageBox,
+)
 from PyQt6.QtCore import Qt, QTimer, QThread, QUrl, pyqtSignal, pyqtSlot, QSize
-from PyQt6.QtGui import QColor, QPixmap, QImage, QIcon
+from PyQt6.QtGui import QColor, QPixmap, QImage, QIcon, QKeySequence, QShortcut
+
+from core.preview_worker import TEXT_EXTS
 
 try:
     from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -233,6 +239,12 @@ class PreviewPanel(QWidget):
         self._current_worker: PreviewThread | None = None
         self._dpi_scale = 1.2  # 預設 SD 模式
 
+        # ── edit mode state ──────────────────────────────────────────────────
+        self._is_editing: bool = False
+        self._editing_path: str = ""
+        self._original_content: str = ""
+        self._editing_encoding: str = "utf-8"
+
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(self.DEBOUNCE_MS)
@@ -265,6 +277,60 @@ class PreviewPanel(QWidget):
         self._image_label.setMinimumSize(0, 0)
         self._image_label.setVisible(False)
         layout.addWidget(self._image_label)
+
+        # ── edit action bar (floating overlay at top, text files only) ───────
+        # NOT in layout — positioned via resizeEvent like floating_bar
+        self._edit_bar = QWidget(self)
+        self._edit_bar.setObjectName("previewEditBar")
+        eb = QHBoxLayout(self._edit_bar)
+        eb.setContentsMargins(8, 3, 8, 3)
+        eb.setSpacing(6)
+        eb.addStretch()
+
+        _btn_txt = lambda key, fb: (
+            self.config_mgr.get_text(key, fb) if self.config_mgr else fb)
+
+        self._btn_edit = QPushButton(_btn_txt("ui_preview_btn_edit", "✏️ 編輯"))
+        self._btn_save = QPushButton(_btn_txt("ui_preview_btn_save_edit", "💾 儲存"))
+        self._btn_discard = QPushButton(_btn_txt("ui_preview_btn_discard", "✕ 放棄"))
+
+        self._btn_save.setObjectName("editSaveBtn")
+        self._btn_discard.setObjectName("editDiscardBtn")
+
+        self._btn_edit.clicked.connect(self._enter_edit_mode)
+        self._btn_save.clicked.connect(self._save_edit)
+        self._btn_discard.clicked.connect(self._discard_edit)
+
+        self._btn_save.setVisible(False)
+        self._btn_discard.setVisible(False)
+
+        eb.addWidget(self._btn_edit)
+        eb.addWidget(self._btn_save)
+        eb.addWidget(self._btn_discard)
+        self._edit_bar.setVisible(False)
+
+        # ── plain text editor (floating overlay, edit mode only) ──────────
+        # NOT in layout — covers _web area via resizeEvent
+        self._text_edit = QPlainTextEdit(self)
+        self._text_edit.setObjectName("previewTextEdit")
+        font_size = 13
+        if self.config_mgr:
+            font_size = self.config_mgr.load_config().get("preview_font_size", 13)
+        bg = "#1e1e2e"
+        fg = "#c9d1d9"
+        if self.config_mgr:
+            c = self.config_mgr.get_theme_colors()
+            bg = c.get("panelBg", bg)
+            fg = c.get("text", fg)
+        self._text_edit.setStyleSheet(
+            f"QPlainTextEdit {{ background:{bg}; color:{fg}; "
+            f"font-family:'Consolas','Courier New',monospace; font-size:{font_size}pt; "
+            f"border:none; }}")
+        self._text_edit.setVisible(False)
+
+        # Ctrl+S saves while in edit mode
+        shortcut = QShortcut(QKeySequence("Ctrl+S"), self._text_edit)
+        shortcut.activated.connect(self._save_edit)
 
         if _HAS_WEBENGINE:
             self._web = QWebEngineView(self)
@@ -339,7 +405,36 @@ class PreviewPanel(QWidget):
             self._show_placeholder()
             return
 
+        # ── guard: ask to save if switching away while editing ────────────
+        if self._is_editing and path != self._editing_path:
+            if self._text_edit.toPlainText() != self._original_content:
+                title = (self.config_mgr.get_text("ui_preview_edit_unsaved_title", "未儲存的變更")
+                         if self.config_mgr else "未儲存的變更")
+                msg = (self.config_mgr.get_text("ui_preview_edit_unsaved_msg",
+                                                "目前的編輯尚未儲存，要儲存嗎？")
+                       if self.config_mgr else "目前的編輯尚未儲存，要儲存嗎？")
+                btn = QMessageBox.question(
+                    self, title, msg,
+                    QMessageBox.StandardButton.Save |
+                    QMessageBox.StandardButton.Discard |
+                    QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Save)
+                if btn == QMessageBox.StandardButton.Cancel:
+                    return
+                if btn == QMessageBox.StandardButton.Save:
+                    self._save_edit()
+                    return
+            self._exit_edit_mode()
+
         ext = os.path.splitext(path)[1].lower()
+
+        # show / hide edit bar based on file type
+        is_text = ext in TEXT_EXTS
+        self._edit_bar.setVisible(is_text)
+        if not is_text:
+            self._btn_edit.setVisible(True)
+            self._btn_save.setVisible(False)
+            self._btn_discard.setVisible(False)
 
         if ext in _IMAGE_EXTS:
             self._timer.stop()
@@ -353,6 +448,91 @@ class PreviewPanel(QWidget):
         self.floating_bar.show()
         self.floating_bar.raise_()
 
+    # ── edit mode ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _read_file_text(path: str) -> tuple[str, str]:
+        """Return (content, encoding). Tries UTF-8 BOM → UTF-8 → system → latin-1."""
+        for enc in ("utf-8-sig", "utf-8", locale.getpreferredencoding(False), "latin-1"):
+            try:
+                with open(path, "r", encoding=enc) as f:
+                    return f.read(), enc
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return "", "utf-8"
+
+    def _enter_edit_mode(self) -> None:
+        path = self._pending_path
+        if not path or not os.path.isfile(path):
+            return
+        content, enc = self._read_file_text(path)
+        self._editing_path = path
+        self._original_content = content
+        self._editing_encoding = enc
+        self._is_editing = True
+
+        self._timer.stop()
+        self._stop_worker()
+        self._image_label.setVisible(False)
+        if _HAS_WEBENGINE:
+            self._web.setVisible(False)
+
+        self._text_edit.setPlainText(content)
+        self._text_edit.setVisible(True)
+        self._text_edit.setFocus()
+
+        self._btn_edit.setVisible(False)
+        self._btn_save.setVisible(True)
+        self._btn_discard.setVisible(True)
+        self._reposition_overlays()
+
+    def _save_edit(self) -> None:
+        if not self._is_editing:
+            return
+        content = self._text_edit.toPlainText()
+        try:
+            enc = self._editing_encoding if self._editing_encoding != "utf-8-sig" else "utf-8"
+            with open(self._editing_path, "w", encoding=enc,
+                      newline="") as f:
+                f.write(content)
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                self.config_mgr.get_text("ui_dialog_common_error", "錯誤") if self.config_mgr else "錯誤",
+                str(e))
+            return
+        saved_path = self._editing_path
+        self._exit_edit_mode()
+        self._pending_path = saved_path
+        self._timer.start()
+
+    def _discard_edit(self) -> None:
+        if not self._is_editing:
+            return
+        if self._text_edit.toPlainText() != self._original_content:
+            title = (self.config_mgr.get_text("ui_preview_edit_unsaved_title", "未儲存的變更")
+                     if self.config_mgr else "未儲存的變更")
+            msg = (self.config_mgr.get_text("ui_preview_edit_discard_msg", "放棄所有編輯內容？")
+                   if self.config_mgr else "放棄所有編輯內容？")
+            if QMessageBox.question(self, title, msg) != QMessageBox.StandardButton.Yes:
+                return
+        path = self._editing_path
+        self._exit_edit_mode()
+        self._pending_path = path
+        self._timer.start()
+
+    def _exit_edit_mode(self) -> None:
+        self._is_editing = False
+        self._editing_path = ""
+        self._original_content = ""
+        self._text_edit.setVisible(False)
+        if _HAS_WEBENGINE:
+            self._web.setVisible(True)
+        self._btn_edit.setVisible(True)
+        self._btn_save.setVisible(False)
+        self._btn_discard.setVisible(False)
+        self._reposition_overlays()
+
     def clear(self) -> None:
         """Reset to placeholder."""
         self._timer.stop()
@@ -361,6 +541,9 @@ class PreviewPanel(QWidget):
         self._image_qimg = None
         self._stop_image_loader()
         self._stop_worker()
+        if self._is_editing:
+            self._exit_edit_mode()
+        self._edit_bar.setVisible(False)
         self._show_placeholder()
         self.floating_bar.hide()
 
@@ -419,13 +602,31 @@ class PreviewPanel(QWidget):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._render_image_to_label()
+        self._reposition_overlays()
 
-        # Keep floating bar at bottom center
-        self.floating_bar.adjustSize()  # 關鍵：更新 Size以符合內容
+    def _reposition_overlays(self) -> None:
+        w, h = self.width(), self.height()
+
+        # Edit bar: full-width strip pinned to the top
+        if self._edit_bar.isVisible():
+            self._edit_bar.adjustSize()
+            eb_h = max(self._edit_bar.sizeHint().height(), 28)
+            self._edit_bar.setGeometry(0, 0, w, eb_h)
+            self._edit_bar.raise_()
+        else:
+            eb_h = 0
+
+        # Text editor: fills the area below the edit bar
+        if self._text_edit.isVisible():
+            self._text_edit.setGeometry(0, eb_h, w, h - eb_h)
+            self._text_edit.raise_()
+
+        # Floating action bar: bottom center (unchanged)
+        self.floating_bar.adjustSize()
         bar_w = self.floating_bar.width()
         bar_h = self.floating_bar.height()
-        x = (self.width() - bar_w) // 2
-        y = self.height() - bar_h - 20  # 20px bottom margin
+        x = (w - bar_w) // 2
+        y = h - bar_h - 20
         self.floating_bar.setGeometry(x, y, bar_w, bar_h)
         self.floating_bar.raise_()
 

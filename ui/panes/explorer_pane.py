@@ -735,12 +735,6 @@ class ExplorerPane(QWidget):
         _date_row.addStretch()
         _dl.addLayout(_date_row)
 
-        _deep_btn = QPushButton("深度搜尋 (索引 / 內容)…")
-        _deep_btn.setObjectName("deepSearchLink")
-        _deep_btn.setFlat(True)
-        _deep_btn.clicked.connect(self.open_advanced_search)
-        _dl.addWidget(_deep_btn, alignment=Qt.AlignmentFlag.AlignLeft)
-
         layout.addWidget(self._filter_drawer)
         # ────────────────────────────────────────────────────────
 

@@ -311,8 +311,8 @@ class IndexManager:
             if not is_global_search: params.append(keyword)
             params.extend([min_size, min_mtime])
             if path_prefix_param: params.append(path_prefix_param)
-            # Personal filter is usually C:\
-            params.append(f"C:\\%")
+            # 有 master/shared 覆蓋 K: 時才限縮到 C:\，否則 personal.db 搜全部路徑
+            params.append(f"C:\\%" if (use_local or use_network) else "%")
 
         if use_network and self.current_shared_slot:
             queries.append(search_template.format(db="shared_db"))
@@ -336,6 +336,45 @@ class IndexManager:
             return cursor.fetchall()
         except Exception as e:
             logging.error(f"Search error: {e}")
+            return []
+
+    def find_duplicates_by_size(self, min_size: int = 1024, limit: int = 2000) -> list[tuple[int, str, str]]:
+        """Returns (size, name, full_path) for files sharing size with ≥1 other file in the index."""
+        self._ensure_latest_shared_db()
+        if not self.conn:
+            return []
+
+        source_parts = [
+            "SELECT f.size, f.name, d.path || '\\' || f.name AS full_path"
+            " FROM main.files_index f JOIN main.folders d ON f.folder_id = d.id"
+            " WHERE f.size >= ?"
+        ]
+        params: list = [min_size]
+
+        if self.current_shared_slot:
+            source_parts.append(
+                "SELECT f.size, f.name, d.path || '\\' || f.name AS full_path"
+                " FROM shared_db.files_index f JOIN shared_db.folders d ON f.folder_id = d.id"
+                " WHERE f.size >= ?"
+            )
+            params.append(min_size)
+
+        union_sql = " UNION ".join(source_parts)  # UNION deduplicates same file indexed in both main+shared_db
+        sql = (
+            f"WITH all_files AS ({union_sql}),"
+            " dup_sizes AS (SELECT size FROM all_files GROUP BY size HAVING COUNT(*) > 1)"
+            " SELECT a.size, a.name, a.full_path"
+            " FROM all_files a JOIN dup_sizes ds ON a.size = ds.size"
+            " ORDER BY a.size DESC, a.full_path LIMIT ?"
+        )
+        params.append(limit)
+
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(sql, params)
+            return cursor.fetchall()
+        except Exception as e:
+            logging.error(f"find_duplicates_by_size error: {e}")
             return []
 
     def update_folder(self, folder_path, mtime, files, conn=None):
