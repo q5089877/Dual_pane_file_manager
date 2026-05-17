@@ -41,6 +41,26 @@ class ConfigManager:
         self.app_name = app_name
         self.lang_data = {}
 
+    @staticmethod
+    def detect_os_language() -> str:
+        """Returns 'zh_TW' if the Windows UI language is Chinese, else 'en_US'."""
+        try:
+            import ctypes
+            lcid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+            # Primary language ID 0x04 = Chinese
+            if (lcid & 0xFF) == 0x04:
+                return "zh_TW"
+        except Exception:
+            pass
+        try:
+            import locale
+            lang = (locale.getdefaultlocale()[0] or "")
+            if lang.lower().startswith("zh"):
+                return "zh_TW"
+        except Exception:
+            pass
+        return "en_US"
+
     def get_text(self, key: str, default: str = None) -> str:
         """Returns translated text for the given key."""
         return self.lang_data.get(key, default or key)
@@ -48,7 +68,7 @@ class ConfigManager:
     def load_language(self, lang_code: str = None):
         """Loads language JSON file into memory."""
         if not lang_code:
-            lang_code = self.config.get("language", "zh_TW")
+            lang_code = self.detect_os_language()
         
         lang_path = self.get_resource_path(f"langs/{lang_code}.json")
         if os.path.exists(lang_path):
@@ -71,77 +91,11 @@ class ConfigManager:
                         config = {"custom_paths": config}
             except (json.JSONDecodeError, Exception):
                 pass
-        
-        self.config = config 
-        
-        needs_save = False
-        if "language" not in config:
-            config["language"] = "zh_TW"
-            needs_save = True
 
-        if "github_repo" not in config:
-            config["github_repo"] = self.GITHUB_REPO
-            needs_save = True
+        self.config = config
+        self.load_language(config.get("language"))
 
-        self.load_language(config["language"])
-
-        if "db_settings" not in config:
-            config["db_settings"] = {
-                "sqlite_timeout": 30,
-                "busy_timeout_ms": 5000,
-                "wal_cache_size": -10000,
-                "transaction_batch_size": 200,
-                "queue_get_timeout": 0.2,
-                "queue_put_timeout": 0.2
-            }
-            needs_save = True
-
-        if "search_filters" not in config:
-            config["search_filters"] = {
-                "size_labels": ["全部", "> 1 MB", "> 10 MB", "> 100 MB", "> 1 GB"],
-                "size_thresholds": {"0": 0, "1": 1048576, "2": 10485760, "3": 104857600, "4": 1073741824},
-                "time_labels": ["全部", "🕒 今日", "📅 本週", "本月"]
-            }
-            needs_save = True
-
-        if "maintenance_settings" not in config:
-            config["maintenance_settings"] = {
-                "idle_check_interval_ms": 60000,
-                "idle_lock_cooldown_min": 2,
-                "nightly_scan_hour": 2,
-                "nightly_scan_minute": 0
-            }
-            needs_save = True
-
-        if "paste_settings" not in config:
-            config["paste_settings"] = {
-                "image_prefix": "剪貼圖",
-                "text_prefix": "文字筆記",
-                "image_format": "%Y%m%d_%H%M%S",
-                "text_format": "%Y%m%d_%H%M%S"
-            }
-            needs_save = True
-
-        if "ai_exporter_settings" not in config:
-            config["ai_exporter_settings"] = {
-                "whitelist_exts": [".py", ".txt", ".md", ".json", ".js", ".ts", ".c", ".cpp", ".h", ".cs", ".java", ".go", ".html", ".css", ".sql", ".yaml", ".yml", ".ini", ".conf"],
-                "blacklist_dirs": [
-                    ".git", ".svn",
-                    "__pycache__", "venv", ".venv", ".tox", "env",
-                    "node_modules", "bower_components", ".next", ".nuxt", ".svelte-kit",
-                    "bin", "obj", ".vs", "packages", "TestResults",
-                    "build", "dist", "out", "target", "Debug", "Release", "x64", "x86",
-                    ".gradle", ".m2",
-                    ".idea", ".jj", ".vscode",
-                    "logs", "log", "temp", "tmp", "Backup",
-                ],
-                "file_size_limit_kb": 100,
-                "total_size_limit_mb": 2,
-                "max_depth": 5
-            }
-            needs_save = True
-
-        if needs_save:
+        if self._apply_config_defaults(config):
             try:
                 self.config_dir.mkdir(parents=True, exist_ok=True)
                 with open(self.config_file, "w", encoding="utf-8") as f:
@@ -150,6 +104,53 @@ class ConfigManager:
                 pass
 
         return config
+
+    def _apply_config_defaults(self, config: dict) -> bool:
+        """Fill in missing config sections. Returns True if any defaults were applied."""
+        changed = False
+
+        if "github_repo" not in config:
+            config["github_repo"] = self.GITHUB_REPO
+            changed = True
+
+        if "db_settings" not in config:
+            config["db_settings"] = {
+                "sqlite_timeout": 30,
+                "busy_timeout_ms": 5000,
+                "wal_cache_size": -10000,
+                "transaction_batch_size": 200,
+                "queue_get_timeout": 0.2,
+                "queue_put_timeout": 0.2,
+            }
+            changed = True
+
+        if "search_filters" not in config:
+            config["search_filters"] = {
+                "size_labels": ["全部", "> 1 MB", "> 10 MB", "> 100 MB", "> 1 GB"],
+                "size_thresholds": {"0": 0, "1": 1048576, "2": 10485760, "3": 104857600, "4": 1073741824},
+                "time_labels": ["全部", "🕒 今日", "📅 本週", "本月"],
+            }
+            changed = True
+
+        if "maintenance_settings" not in config:
+            config["maintenance_settings"] = {
+                "idle_check_interval_ms": 60000,
+                "idle_lock_cooldown_min": 2,
+                "nightly_scan_hour": 2,
+                "nightly_scan_minute": 0,
+            }
+            changed = True
+
+        if "paste_settings" not in config:
+            config["paste_settings"] = {
+                "image_prefix": "剪貼圖",
+                "text_prefix": "文字筆記",
+                "image_format": "%Y%m%d_%H%M%S",
+                "text_format": "%Y%m%d_%H%M%S",
+            }
+            changed = True
+
+        return changed
 
     def get_update_source_path(self):
         """尋找更新來源目錄路徑。"""
@@ -222,40 +223,11 @@ class ConfigManager:
             "text": "#C9D1D9", "textMuted": "#8B949E", "folder": "#B58900",
             "accent": "#58A6FF", "border": "#3e4451",
             "success": "#57B77F", "danger": "#C9605A",
-            "pin_fresh": "#57B77F", "pin_warn": "#D97706", "pin_urgent": "#C9605A",
             "glassBg": "rgba(30, 34, 45, 0.92)", "glassBorder": "rgba(255, 255, 255, 0.15)",
             "actionBarBg": "rgba(30, 34, 45, 0.5)", "surfaceSubtle": "rgba(255, 255, 255, 0.04)",
             "accentSubtle": "rgba(88, 166, 255, 0.12)", "accentBorder": "rgba(88, 166, 255, 0.4)",
             "errorSubtle": "rgba(244, 63, 94, 0.08)", "shadow": "rgba(0, 0, 0, 0.6)",
             "quickLookBg": "rgba(30, 30, 30, 0.95)", "quickLookBorder": "rgba(255, 255, 255, 0.2)",
-        },
-        "深色 Dracula": {
-            "themeName": "深色 Dracula",
-            "bg": "#282a36", "panelBg": "#1e1f29", "headerBg": "#21222c",
-            "activeTab": "#6272a4", "activeBorder": "#ff79c6", "inactiveTab": "#282a36",
-            "text": "#f8f8f2", "textMuted": "#6272a4", "folder": "#ffb86c",
-            "accent": "#bd93f9", "border": "#44475a",
-            "success": "#50fa7b", "danger": "#ff5555",
-            "pin_fresh": "#50fa7b", "pin_warn": "#ffb86c", "pin_urgent": "#ff5555",
-            "glassBg": "rgba(40, 42, 54, 0.92)", "glassBorder": "rgba(255, 255, 255, 0.15)",
-            "actionBarBg": "rgba(40, 42, 54, 0.5)", "surfaceSubtle": "rgba(255, 255, 255, 0.04)",
-            "accentSubtle": "rgba(189, 147, 249, 0.12)", "accentBorder": "rgba(189, 147, 249, 0.4)",
-            "errorSubtle": "rgba(255, 85, 85, 0.08)", "shadow": "rgba(0, 0, 0, 0.6)",
-            "quickLookBg": "rgba(30, 30, 40, 0.95)", "quickLookBorder": "rgba(255, 255, 255, 0.2)",
-        },
-        "亮色清爽": {
-            "themeName": "亮色清爽",
-            "bg": "#f5f5f5", "panelBg": "#ffffff", "headerBg": "#e8e8e8",
-            "activeTab": "#0078d4", "activeBorder": "#0078d4", "inactiveTab": "#f0f0f0",
-            "text": "#1e1e1e", "textMuted": "#666666", "folder": "#c07800",
-            "accent": "#0078d4", "border": "#d0d0d0",
-            "success": "#107c10", "danger": "#c42b1c",
-            "pin_fresh": "#107c10", "pin_warn": "#c07800", "pin_urgent": "#c42b1c",
-            "glassBg": "rgba(245, 245, 245, 0.95)", "glassBorder": "rgba(0, 0, 0, 0.15)",
-            "actionBarBg": "rgba(240, 240, 240, 0.8)", "surfaceSubtle": "rgba(0, 0, 0, 0.04)",
-            "accentSubtle": "rgba(0, 120, 212, 0.1)", "accentBorder": "rgba(0, 120, 212, 0.4)",
-            "errorSubtle": "rgba(196, 43, 28, 0.08)", "shadow": "rgba(0, 0, 0, 0.2)",
-            "quickLookBg": "rgba(250, 250, 250, 0.98)", "quickLookBorder": "rgba(0, 0, 0, 0.15)",
         },
     }
 
@@ -349,31 +321,7 @@ class ConfigManager:
             "text_format": "%Y%m%d_%H%M%S"
         })
 
-    def get_ai_exporter_settings(self):
-        _DEFAULT_BLACKLIST = [
-            ".git", ".svn",
-            "__pycache__", "venv", ".venv", ".tox", "env",
-            "node_modules", "bower_components", ".next", ".nuxt", ".svelte-kit",
-            "bin", "obj", ".vs", "packages", "TestResults",
-            "build", "dist", "out", "target", "Debug", "Release", "x64", "x86",
-            ".gradle", ".m2",
-            ".idea", ".jj", ".vscode",
-            ".pytest_cache", ".mypy_cache", ".ruff_cache",
-            "logs", "log", "temp", "tmp", "Backup",
-        ]
-        config = self.load_config()
-        settings = config.get("ai_exporter_settings", {}).copy()
-        # Always merge stored blacklist with defaults so new entries apply to existing installs
-        stored_blacklist = settings.get("blacklist_dirs", [])
-        merged = list({d.lower(): d for d in _DEFAULT_BLACKLIST + stored_blacklist}.values())
-        settings.setdefault("whitelist_exts", [".py", ".txt", ".md", ".json", ".js", ".ts", ".c", ".cpp", ".h", ".cs", ".java", ".go", ".html", ".css", ".sql", ".yaml", ".yml", ".ini", ".conf"])
-        settings["blacklist_dirs"] = merged
-        settings.setdefault("file_size_limit_kb", 100)
-        settings.setdefault("total_size_limit_mb", 2)
-        settings.setdefault("max_depth", 5)
-        if isinstance(settings["whitelist_exts"], list):
-            settings["whitelist_exts"] = [e.strip() for e in settings["whitelist_exts"] if e.strip()]
-        return settings
+
 
     def get_app_settings(self) -> dict:
         config = self.load_config()
@@ -405,7 +353,7 @@ class ConfigManager:
             "text_prefix":           paste.get("text_prefix", "文字筆記"),
             "image_format":          paste.get("image_format", "%Y%m%d_%H%M%S"),
             "text_format":           paste.get("text_format", "%Y%m%d_%H%M%S"),
-            "language":              config.get("language", "zh_TW"),
+            "language":              self.detect_os_language(),
         }
 
     # ── Favorites ─────────────────────────────────────────────────────────────
@@ -421,44 +369,6 @@ class ConfigManager:
                 json.dump(config, f, ensure_ascii=False, indent=4)
         except Exception:
             pass
-
-    # ── Snapshots ─────────────────────────────────────────────────────────────
-
-    def get_snapshots(self) -> list:
-        return self.load_config().get("snapshots", [])
-
-    def add_snapshot(self, name: str, left_tabs: list, right_tabs: list, splitter_sizes: list) -> bool:
-        import datetime
-        config = self.load_config()
-        snapshots = config.get("snapshots", [])
-        snapshots.insert(0, {
-            "name": name,
-            "created": datetime.datetime.now().isoformat(timespec="seconds"),
-            "left_tabs": left_tabs,
-            "right_tabs": right_tabs,
-            "splitter_sizes": splitter_sizes,
-        })
-        config["snapshots"] = snapshots
-        try:
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(config, f, ensure_ascii=False, indent=4)
-            return True
-        except Exception:
-            return False
-
-    def delete_snapshot(self, index: int) -> bool:
-        config = self.load_config()
-        snapshots = config.get("snapshots", [])
-        if 0 <= index < len(snapshots):
-            snapshots.pop(index)
-            config["snapshots"] = snapshots
-            try:
-                with open(self.config_file, "w", encoding="utf-8") as f:
-                    json.dump(config, f, ensure_ascii=False, indent=4)
-                return True
-            except Exception:
-                pass
-        return False
 
     # ── Pin management ────────────────────────────────────────────────────────
 
@@ -537,16 +447,14 @@ class ConfigManager:
 
     def save_app_settings(self, settings: dict) -> bool:
         config = self.load_config()
-        top_level_keys = ["restore_last_session", "remote_index_root", "max_depth", "search_limit", "pdf_preview_max_pages", "confirm_before_delete", "preview_font_size", "is_master_node", "monitored_paths", "language", "network_scan_depth", "exclude_exts", "exclude_dirs"]
+        top_level_keys = ["restore_last_session", "remote_index_root", "max_depth", "search_limit", "pdf_preview_max_pages", "confirm_before_delete", "preview_font_size", "is_master_node", "monitored_paths", "network_scan_depth", "exclude_exts", "exclude_dirs"]
         for key in top_level_keys:
             if key in settings: config[key] = settings[key]
         if "nightly_scan_hour" in settings or "nightly_scan_minute" in settings:
             maint = config.setdefault("maintenance_settings", {})
             if "nightly_scan_hour" in settings: maint["nightly_scan_hour"] = settings["nightly_scan_hour"]
             if "nightly_scan_minute" in settings: maint["nightly_scan_minute"] = settings["nightly_scan_minute"]
-        if "ai_blacklist_dirs" in settings:
-            ai = config.setdefault("ai_exporter_settings", {})
-            ai["blacklist_dirs"] = settings["ai_blacklist_dirs"]
+
         paste_keys = ["image_prefix", "text_prefix", "image_format", "text_format"]
         if any(k in settings for k in paste_keys):
             paste = config.setdefault("paste_settings", {})

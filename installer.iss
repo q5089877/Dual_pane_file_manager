@@ -1,10 +1,10 @@
 [Setup]
 AppId={{A7B8C9D0-E1F2-4A3B-8C5D-6E7F8A9B0C1D}
 AppName=DualPaneFileManager
-AppVersion=1.0.0
+AppVersion=1.2.0
 AppPublisher=SHL
-; 預設安裝在 %USERPROFILE%\DevRepositories\SHL\DualPaneApp
-; 符合公司規定路徑，使用者仍可在安裝時修改
+; ?�設安�???%USERPROFILE%\DevRepositories\SHL\DualPaneApp
+; 符�??�司規�?路�?，使?�者�??�在安�??�修??
 DefaultDirName={%USERPROFILE}\DevRepositories\SHL\DualPaneApp
 DisableDirPage=yes
 DisableProgramGroupPage=yes
@@ -18,16 +18,16 @@ UninstallDisplayIcon={app}\DualPaneFileManager.exe
 PrivilegesRequired=lowest
 
 [Languages]
-; 只保留預設英文，避免找不到語言包報錯
+; ?��??��?設英?��??��??��??��?言?�報??
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; 抓取所有 PyInstaller 產出的檔案
+; ?��??�??PyInstaller ?�出?��?�?
 Source: "dist\DualPaneFileManager\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; 保護設定檔
+; 保護設�?�?
 Source: "dist\DualPaneFileManager\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Icons]

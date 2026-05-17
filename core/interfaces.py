@@ -159,36 +159,4 @@ class IMainWindowView(ABC):
         pass
 
 
-# ==========================================
-# MVP Contract: AI Exporter (AI 匯出合約)
-# ==========================================
-class IAIExporterView(ABC):
-    """View 抽象合約：處理 AI Context 匯出的進度顯示與結果通知"""
-    @abstractmethod
-    def show(self) -> None:
-        pass
-
-    @abstractmethod
-    def close(self) -> None:
-        pass
-
-    @abstractmethod
-    def set_range(self, total: int) -> None:
-        pass
-
-    @abstractmethod
-    def update_progress(self, filename: str, current: int, total: int) -> None:
-        pass
-
-    @abstractmethod
-    def show_success(self, file_count: int, char_count: int) -> None:
-        pass
-
-    @abstractmethod
-    def show_error(self, message: str) -> None:
-        pass
-
-    @abstractmethod
-    def set_cancelled_callback(self, callback) -> None:
-        pass
 

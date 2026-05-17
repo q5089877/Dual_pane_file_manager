@@ -1,12 +1,11 @@
 import os
-import re
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QSplitter,
-    QMessageBox, QTabBar, QFileDialog, QMenu, QLabel, QDialog,
+    QMessageBox, QTabBar, QMenu, QLabel, QDialog,
     QGraphicsOpacityEffect, QToolButton
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QStandardPaths, QPoint, QTimer, QSize, QThread
-from PyQt6.QtGui import QAction, QShortcut, QKeySequence, QIcon
+from PyQt6.QtCore import Qt, pyqtSignal, QStandardPaths, QTimer, QSize, QThread
+from PyQt6.QtGui import QShortcut, QKeySequence, QIcon
 
 from ui.widgets.tabs import CustomTabWidget
 from ui.widgets.popups import PathPopup, PinPopup
@@ -15,7 +14,14 @@ from ui.panes.explorer_pane import ExplorerPane
 from core.config_manager import ConfigManager
 from core.interfaces import IMainWindowView
 from ui.presenters.main_window_presenter import MainWindowPresenter
-from core.system_utils import get_user_idle_time_ms, path_exists_fast as _path_exists_fast
+from core.system_utils import path_exists_fast as _path_exists_fast
+
+from ui.windows.mw_status import _MwStatusMixin
+from ui.windows.mw_undo import _MwUndoMixin
+from ui.windows.mw_pins import _MwPinsMixin
+from ui.windows.mw_favorites import _MwFavoritesMixin
+from ui.windows.mw_workers import _MwWorkersMixin
+from ui.windows.mw_file_ops import _MwFileOpsMixin
 
 
 class _TrashDropButton(QToolButton):
@@ -175,7 +181,15 @@ class _QuickAccessWorker(QThread):
         self.paths_ready.emit(paths[:5] if paths else [])
 
 
-class MainWindow(QMainWindow):
+class MainWindow(
+    _MwWorkersMixin,
+    _MwUndoMixin,
+    _MwPinsMixin,
+    _MwFavoritesMixin,
+    _MwFileOpsMixin,
+    _MwStatusMixin,
+    QMainWindow,
+):
     """Main application window. Pure View Adapter — all logic delegated to MainWindowPresenter."""
     file_operation_finished = pyqtSignal()
 
@@ -234,6 +248,8 @@ class MainWindow(QMainWindow):
 
         # 啟動 10 秒後進行更新檢查 (非同步，讓 UI 充分渲染後才連網)
         QTimer.singleShot(10000, self._start_update_check)
+        # 啟動 2 秒後檢查過期釘選（UI 穩定後再顯示提示）
+        QTimer.singleShot(2000, self._check_stale_pins)
 
     def _on_file_op_finished(self):
         # Add a 500ms delay before refreshing the UI.
@@ -494,78 +510,6 @@ class MainWindow(QMainWindow):
     def save_config(self):
         self._internal_save_config()
 
-    def _on_system_timer_tick(self):
-        idle_ms = get_user_idle_time_ms()
-        idle_minutes = idle_ms // 60000
-        if hasattr(self, "presenter"):
-            self.presenter.on_system_tick(idle_minutes)
-
-    def _start_idle_c_scan(self):
-        if self.idle_scanner_worker and getattr(self.idle_scanner_worker, "isRunning", lambda: False)():
-            return
-
-        local_drives = self.config_mgr.get_fixed_drives()
-        if not local_drives:
-            return
-
-        configs_c = [(os.path.normpath(p), 99)
-                     for p in local_drives if os.path.exists(p)]
-        if not configs_c:
-            return
-
-        from network_search.engine import ScannerWorker, IndexManager
-        db_dir = os.path.join(os.path.dirname(
-            self.config_mgr.config_file), "indexes")
-
-        # 建立專屬的 IndexManager 實例
-        idx_mgr = IndexManager(db_dir, read_only=False)
-        self.idle_scanner_worker = ScannerWorker(
-            configs_c,
-            idx_mgr,
-            target_db="personal",
-            exclude_dirs=self.config.get("exclude_dirs", [])
-        )
-        self.idle_scanner_worker.finished.connect(self._on_idle_scan_finished)
-        self.idle_scanner_worker.start()
-
-    def _stop_idle_c_scan(self):
-        if self.idle_scanner_worker and getattr(self.idle_scanner_worker, "isRunning", lambda: False)():
-            if hasattr(self.idle_scanner_worker, 'stop'):
-                self.idle_scanner_worker.stop()
-            # 避免卡死 UI，不使用 .wait()，由 GC 回收
-            self.idle_scanner_worker = None
-
-    def _on_idle_scan_finished(self):
-        self.idle_scanner_worker = None
-
-    def _start_nightly_k_scan(self):
-        if hasattr(self, "nightly_scanner_worker") and getattr(self.nightly_scanner_worker, "isRunning", lambda: False)():
-            return
-
-        monitored = self.config.get("monitored_paths", [])
-        if not monitored:
-            return
-
-        configs_k = [(os.path.normpath(p), self.config.get("max_depth", 7))
-                     for p in monitored if os.path.exists(p)]
-        if not configs_k:
-            return
-
-        from network_search.engine import ScannerWorker, IndexManager
-        db_dir = os.path.join(os.path.dirname(
-            self.config_mgr.config_file), "indexes")
-        remote_dir = self.config.get("remote_index_root")
-
-        # 建立獨立的 IndexManager 處理 K 槽更新，隨後會自動拋送(Publish)給所有 Consumer
-        idx_mgr = IndexManager(db_dir, read_only=False)
-        self.nightly_scanner_worker = ScannerWorker(
-            configs_k,
-            idx_mgr,
-            remote_db_dir=remote_dir,
-            target_db="local"  # writes to local master.db, then publishes copy to remote
-        )
-        self.nightly_scanner_worker.start()
-
     def _internal_save_config(self):
         l_paths = [self.left_tabs.widget(i).path_edit.text()
                    for i in range(self.left_tabs.count())]
@@ -671,21 +615,6 @@ class MainWindow(QMainWindow):
 
         self.tool_bar.addSeparator()
 
-        # ── 群組 3：進階功能（低頻）──────────────────────────
-        snap_btn = QToolButton()
-        snap_btn.setText(self.config_mgr.get_text(
-            "ui_main_btn_snapshot", "情境快照"))
-        snap_btn.setIcon(QIcon(self.config_mgr.get_ui_resource_path("camera")))
-        snap_btn.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        snap_btn.setToolTip(self.config_mgr.get_text(
-            "ui_main_btn_snapshot_tooltip", "儲存 / 還原兩欄分頁的情境快照"))
-        snap_btn.setObjectName("snapshotBtn")
-        snap_btn.clicked.connect(self._show_snapshot_menu)
-        self.tool_bar.addWidget(snap_btn)
-
-        self.tool_bar.addSeparator()
-
         # ── 設定按鈕 ───────────────────────────────────────────
         from PyQt6.QtWidgets import QStyle
         settings_btn = QToolButton()
@@ -722,98 +651,6 @@ class MainWindow(QMainWindow):
         ss = self.config_mgr.load_stylesheet("styles.qss", "theme.json")
         QApplication.instance().setStyleSheet(ss)
         self.update()
-
-    def on_advanced_search_clicked(self):
-        if self.active_pane:
-            self.active_pane.open_advanced_search()
-        else:
-            QMessageBox.warning(self, self.config_mgr.get_text(
-                "ui_main_warn_title", "警告"), self.config_mgr.get_text("ui_main_warn_select_pane", "請先點擊選取一個分頁"))
-
-    def on_quick_access_clicked(self, path):
-        if self.active_pane:
-            self.active_pane.set_path(path)
-
-    def on_add_custom_path(self):
-        p = QFileDialog.getExistingDirectory(
-            self, self.config_mgr.get_text("ui_main_dialog_new_folder", "新增資料夾"))
-        if p and p not in self.custom_paths:
-            self.custom_paths.append(p)
-            self.refresh_toolbar()
-            self.save_config()
-
-    def remove_custom_path(self, path):
-        if path in self.custom_paths:
-            self.custom_paths.remove(path)
-            self.refresh_toolbar()
-            self.save_config()
-            self.path_popup.hide()
-
-    # ── Pin ─────────────────────────────────────────────────────────────────────
-
-    def toggle_pin(self, path: str):
-        """Pin or unpin a path. Called by Ctrl+D and context menus."""
-        from ui.widgets.popups import PinNoteDialog
-        if self.config_mgr.is_pinned(path):
-            self.config_mgr.remove_pin(path)
-            msg = self.config_mgr.get_text("ui_main_toast_unpinned", "已解除釘選：{}").format(
-                os.path.basename(path) or path)
-            self.show_toast(msg, "info")
-        else:
-            dlg = PinNoteDialog(os.path.basename(path) or path, self)
-            if dlg.exec() == PinNoteDialog.DialogCode.Rejected:
-                return
-            self.config_mgr.add_pin(path, os.path.isdir(path), dlg.note())
-            msg = self.config_mgr.get_text("ui_main_toast_pinned", "已釘選：{}").format(
-                os.path.basename(path) or path)
-            self.show_toast(msg, "success")
-        self.refresh_toolbar()
-
-    def add_pin_silent(self, path: str):
-        """Pin a path without prompting for a note. Used by drag-and-drop."""
-        if self.config_mgr.is_pinned(path):
-            msg = self.config_mgr.get_text("ui_main_toast_pinned", "已釘選：{}").format(
-                os.path.basename(path) or path)
-            self.show_toast(msg, "info")
-            return
-        self.config_mgr.add_pin(path, os.path.isdir(path))
-        msg = self.config_mgr.get_text("ui_main_toast_pinned_with_note", "已釘選：{}（右鍵可加備忘）").format(
-            os.path.basename(path) or path)
-        self.show_toast(msg, "success")
-        self.refresh_toolbar()
-
-    def set_pin_important(self, path: str, important: bool):
-        self.config_mgr.set_pin_important(path, important)
-        label = self.config_mgr.get_text("ui_main_pinned_important", "已標為重要（永久保留）") if important else self.config_mgr.get_text(
-            "ui_main_pinned_unimportant", "已取消重要標記")
-        self.show_toast(label, "success" if important else "info")
-        self.refresh_toolbar()
-
-    def edit_pin_note(self, path: str):
-        """Edit the note of an existing pin."""
-        from ui.widgets.popups import PinNoteDialog
-        pins = self.config_mgr.get_pins()
-        current_note = next((p.get("note", "")
-                            for p in pins if p["path"] == path), "")
-        dlg = PinNoteDialog(os.path.basename(
-            path) or path, self, timeout_sec=0)
-        dlg._edit.setText(current_note)
-        dlg._edit.selectAll()
-        note = dlg.note() if dlg.exec() == PinNoteDialog.DialogCode.Accepted else None
-        if note is not None:
-            self.config_mgr.update_pin_note(path, note)
-            self.refresh_toolbar()
-
-    def _show_pin_menu(self):
-        pins = self.config_mgr.get_pins()
-        self.pin_popup.populate(pins, self.config_mgr)
-        btn = getattr(self, "pin_btn", None)
-        if btn:
-            pos = btn.mapToGlobal(QPoint(0, btn.height()))
-        else:
-            pos = self.mapToGlobal(QPoint(0, 40))
-        self.pin_popup.move(pos)
-        self.pin_popup.show()
 
     def set_active_pane(self, pane):
         self.active_pane = pane
@@ -857,174 +694,8 @@ class MainWindow(QMainWindow):
             for i in range(tw.count()):
                 tw.widget(i).refresh()
 
-    def _start_update_check(self):
-        """啟動非同步更新檢查執行緒（GitHub Releases）。"""
-        from ui.workers.update_manager import UpdateCheckWorker
-        self._update_worker = UpdateCheckWorker(self.config_mgr)
-        self._update_worker.update_available.connect(self._on_update_available)
-        self._update_worker.start()
-
-    def _on_update_available(self, version: str, download_url: str):
-        """當 GitHub 有新版本時，在狀態列顯示更新按鈕。"""
-        msg = self.config_mgr.get_text(
-            "ui_update_found", "🚀 新版本 {v} 已發布！").format(v=version)
-        self.set_status_msg(msg, "success")
-
-        btn_text = self.config_mgr.get_text("ui_update_now", "立即更新")
-        self.update_btn.setText(btn_text)
-        self.update_btn.show()
-
-        try:
-            self.update_btn.clicked.disconnect()
-        except:
-            pass
-        self.update_btn.clicked.connect(
-            lambda: self._trigger_update(download_url))
-
-    def _trigger_update(self, download_url: str):
-        """下載新版 zip，寫入更新腳本後關閉程式。"""
-        import sys
-        import subprocess
-        import os
-        from ui.workers.update_manager import DownloadUpdateWorker, write_update_script
-        from PyQt6.QtWidgets import QProgressDialog, QApplication
-        from PyQt6.QtCore import Qt
-
-        self.update_btn.setEnabled(False)
-        self.set_status_msg(self.config_mgr.get_text(
-            "ui_update_downloading", "正在下載更新…"), "")
-
-        progress_dlg = QProgressDialog(
-            self.config_mgr.get_text("ui_update_downloading", "正在下載更新…"),
-            self.config_mgr.get_text("ui_cancel", "取消"), 0, 100, self
-        )
-        progress_dlg.setWindowModality(Qt.WindowModality.WindowModal)
-        progress_dlg.setMinimumDuration(0)
-        progress_dlg.show()
-
-        worker = DownloadUpdateWorker(download_url)
-        worker.progress.connect(progress_dlg.setValue)
-        worker.error.connect(lambda msg: (
-            progress_dlg.close(),
-            self.set_status_msg(f"下載失敗：{msg}", "error"),
-            self.update_btn.setEnabled(True),
-        ))
-
-        def on_finished(zip_path: str):
-            progress_dlg.close()
-            if getattr(sys, 'frozen', False):
-                install_dir = os.path.dirname(sys.executable)
-            else:
-                install_dir = os.path.dirname(os.path.abspath(__file__))
-
-            bat_path = write_update_script(zip_path, install_dir)
-            try:
-                # CREATE_NEW_CONSOLE
-                subprocess.Popen([bat_path], creationflags=0x00000010)
-                QApplication.quit()
-                sys.exit(0)
-            except Exception as e:
-                self.set_status_msg(f"無法執行更新腳本：{e}", "error")
-                self.update_btn.setEnabled(True)
-
-        worker.finished.connect(on_finished)
-        progress_dlg.canceled.connect(worker.cancel)
-        self._download_worker = worker  # 防止 GC
-        worker.start()
-
     def on_ctrl_left(self): self.presenter.sync_to_left()
     def on_ctrl_right(self): self.presenter.sync_to_right()
-
-    def on_alt_left(self):
-        if self.active_pane:
-            self.active_pane.go_back()
-
-    def on_alt_right(self):
-        if self.active_pane:
-            self.active_pane.go_forward()
-
-    def show_drive_selection(self, side):
-        """彈出磁碟選單"""
-        tabs = self.left_tabs if side == "left" else self.right_tabs
-        menu = QMenu(self)
-        from PyQt6.QtCore import QDir
-        for drive in QDir.drives():
-            path = drive.absoluteFilePath()
-            tpl = self.config_mgr.get_text("ui_main_menu_disk", "磁碟 {}")
-            action = menu.addAction(tpl.format(path))
-            action.triggered.connect(
-                lambda _, p=path, t=tabs: self.add_new_tab(t, p))
-
-        # 在對應分欄的上方彈出
-        pos = tabs.mapToGlobal(QPoint(0, 0))
-        menu.exec(pos)
-
-    def copy_selected_to_other_side(self):
-        """將選取項目複製到對面分欄"""
-        if not self.active_pane:
-            return
-        is_left = any(self.left_tabs.widget(i) ==
-                      self.active_pane for i in range(self.left_tabs.count()))
-        target_tw = self.right_tabs if is_left else self.left_tabs
-        target_pane = target_tw.currentWidget()
-        if not target_pane:
-            return
-
-        dest_dir = target_pane.model.filePath(
-            target_pane.proxy_model.mapToSource(target_pane.tree.rootIndex()))
-        view = self.active_pane.view_stack.currentWidget()
-        proxy = self.active_pane.list_proxy if view is self.active_pane.list_view else self.active_pane.proxy_model
-        idxs = view.selectionModel().selectedRows() if hasattr(
-            view, 'selectionModel') else []
-        if not idxs and hasattr(view, 'selectionModel'):
-            idxs = view.selectionModel().selectedIndexes()
-
-        if not idxs:
-            return
-
-        src_paths = list(dict.fromkeys(
-            self.active_pane.model.filePath(proxy.mapToSource(idx))
-            for idx in idxs
-        ))
-        src_paths = [p for p in src_paths if p]
-
-        if not src_paths:
-            return
-
-        # 這裡調用 view 的 check_and_perform 以顯示進度條並處理衝突
-        view.check_and_perform(src_paths, dest_dir, "copy")
-
-    def move_selected_to_other_side(self):
-        """將選取項目移動到對面分欄"""
-        if not self.active_pane:
-            return
-        is_left = any(self.left_tabs.widget(i) ==
-                      self.active_pane for i in range(self.left_tabs.count()))
-        target_tw = self.right_tabs if is_left else self.left_tabs
-        target_pane = target_tw.currentWidget()
-        if not target_pane:
-            return
-
-        dest_dir = target_pane.model.filePath(
-            target_pane.proxy_model.mapToSource(target_pane.tree.rootIndex()))
-        view = self.active_pane.view_stack.currentWidget()
-        proxy = self.active_pane.list_proxy if view is self.active_pane.list_view else self.active_pane.proxy_model
-        idxs = view.selectionModel().selectedRows() if hasattr(
-            view, 'selectionModel') else []
-        if not idxs and hasattr(view, 'selectionModel'):
-            idxs = view.selectionModel().selectedIndexes()
-
-        src_paths = list(dict.fromkeys(
-            self.active_pane.model.filePath(proxy.mapToSource(idx))
-            for idx in idxs
-        ))
-        src_paths = [p for p in src_paths if p]
-
-        if not src_paths:
-            return
-
-        # 這裡調用 view 的 check_and_perform 以顯示進度條並處理衝突
-        view.check_and_perform(src_paths, dest_dir, "move")
 
     def cycle_local_tabs(self):
         """在目前側的分欄內循環切換分頁"""
@@ -1060,19 +731,6 @@ class MainWindow(QMainWindow):
         if pane:
             pane.view_stack.currentWidget().setFocus()
             self.set_active_pane(pane)
-
-    def show_quick_look(self, path):
-        """Show the Quick Look preview dialog for the given path."""
-        from ui.widgets.quick_look import QuickLookDialog
-        dlg = QuickLookDialog(path, self.config_mgr, self)
-        dlg.exec()
-        is_left = any(self.left_tabs.widget(i) ==
-                      self.active_pane for i in range(self.left_tabs.count()))
-        target_tw = self.right_tabs if is_left else self.left_tabs
-
-        pane = target_tw.currentWidget()
-        if pane:
-            pane.view_stack.currentWidget().setFocus()
 
     def _get_opposite_pane(self):
         if not self.active_pane:
@@ -1272,309 +930,6 @@ class MainWindow(QMainWindow):
                     "ui_main_toast_copy_failed").format(e)
                 self.show_toast(msg, "error")
 
-    def _sync_side(self, side):
-        if not self.active_pane:
-            return
-        view = self.active_pane.view_stack.currentWidget()
-        idx = view.currentIndex()
-        path = self.active_pane.model.filePath(
-            self.active_pane.proxy_model.mapToSource(idx if idx.isValid() else view.rootIndex()))
-        if os.path.isfile(path):
-            path = os.path.dirname(path)
-        target = self.left_tabs.currentWidget(
-        ) if side == "left" else self.right_tabs.currentWidget()
-        if target:
-            target.set_path(path)
-
-    # ── Snapshot ────────────────────────────────────────────────────────────────
-
-    def _snapshot_auto_name(self) -> str:
-        """依左右各分頁名稱產生預設情境名稱，例如 BBB<->CCC"""
-        def tab_names(tw):
-            return [tw.tabText(i) for i in range(tw.count())]
-        left = " / ".join(tab_names(self.left_tabs)) or "（空）"
-        right = " / ".join(tab_names(self.right_tabs)) or "（空）"
-        return f"{left}<->{right}"
-
-    def _show_snapshot_menu(self):
-        menu = QMenu(self)
-
-        save_act = menu.addAction(self.config_mgr.get_text(
-            "ui_main_snapshot_default_name", "＋ 儲存目前情境快照"))
-        save_act.triggered.connect(self._save_snapshot)
-
-        snapshots = self.config_mgr.get_snapshots()
-        if snapshots:
-            menu.addSeparator()
-            for i, snap in enumerate(snapshots):
-                sub = menu.addMenu(f"📂 {snap['name']}")
-                restore_act = sub.addAction(
-                    self.config_mgr.get_text("ui_main_snapshot_restore", "還原"))
-                restore_act.triggered.connect(
-                    lambda checked, s=snap: self._restore_snapshot(s))
-                del_act = sub.addAction(self.config_mgr.get_text(
-                    "ui_main_snapshot_delete", "刪除"))
-                del_act.triggered.connect(
-                    lambda checked, idx=i: self._delete_snapshot(idx))
-
-        from PyQt6.QtWidgets import QToolButton
-        snap_btn = None
-        for w in self.tool_bar.findChildren(QToolButton):
-            if w.objectName() == "snapshotBtn":
-                snap_btn = w
-                break
-        pos = snap_btn.mapToGlobal(
-            QPoint(0, snap_btn.height())) if snap_btn else self.mapToGlobal(QPoint(0, 40))
-        menu.exec(pos)
-
-    # ── Favorites ─────────────────────────────────────────────────────────────
-
-    def _build_favorites_menu(self) -> QMenu:
-        menu = QMenu(self)
-        favorites = self.config_mgr.get_favorites()
-        if favorites:
-            for entry in favorites:
-                group_name = entry.get("group", "")
-                paths = entry.get("paths", [])
-                if not paths:
-                    continue
-                sub = menu.addMenu(f"📁 {group_name}")
-                for path in paths:
-                    act = sub.addAction(path)
-                    act.triggered.connect(
-                        lambda checked, p=path: self._navigate_to_favorite(p))
-        else:
-            empty_act = menu.addAction(
-                self.config_mgr.get_text("ui_favorites_empty", "(尚無常用路徑)"))
-            empty_act.setEnabled(False)
-        menu.addSeparator()
-        add_act = menu.addAction(
-            self.config_mgr.get_text("ui_favorites_add_current", "➕ 將目前路徑加入常用..."))
-        add_act.triggered.connect(self._add_current_path_to_favorites)
-        manage_act = menu.addAction(
-            self.config_mgr.get_text("ui_favorites_manage", "✏️ 管理常用路徑..."))
-        manage_act.triggered.connect(self._open_favorites_manager)
-        return menu
-
-    def _show_favorites_menu(self) -> None:
-        from PyQt6.QtGui import QCursor
-        self._build_favorites_menu().exec(QCursor.pos())
-
-    def _show_favorites_menu_at(self, pos: QPoint) -> None:
-        """Slot for pane toolbar star button — shows favorites at the given position."""
-        self._build_favorites_menu().exec(pos)
-
-    def _navigate_to_favorite(self, path: str) -> None:
-        pane = getattr(self, "active_pane", None)
-        if pane and hasattr(pane, "set_path"):
-            pane.set_path(path)
-
-    def _add_path_to_favorites(self, path: str) -> None:
-        from PyQt6.QtWidgets import QInputDialog
-        if not path or not os.path.isdir(path):
-            return
-        favorites = self.config_mgr.get_favorites()
-        group_names = [e["group"] for e in favorites]
-        title = self.config_mgr.get_text("ui_favorites_add_current_title", "加入常用路徑")
-        label = self.config_mgr.get_text("ui_favorites_select_group", "選擇或輸入群組名稱：")
-        group, ok = QInputDialog.getItem(
-            self, title, label, group_names or ["常用"], editable=True)
-        if not ok or not group.strip():
-            return
-        group = group.strip()
-        for entry in favorites:
-            if entry["group"] == group:
-                if path not in entry["paths"]:
-                    entry["paths"].append(path)
-                self.config_mgr.save_favorites(favorites)
-                return
-        favorites.append({"group": group, "paths": [path]})
-        self.config_mgr.save_favorites(favorites)
-
-    def _add_current_path_to_favorites(self) -> None:
-        pane = getattr(self, "active_pane", None)
-        if not pane:
-            return
-        current = getattr(pane, "_current_path", "") or ""
-        if not current or current == "home://":
-            return
-        self._add_path_to_favorites(current)
-
-    def _open_favorites_manager(self) -> None:
-        from ui.widgets.favorites_dialog import FavoritesDialog
-        dlg = FavoritesDialog(self.config_mgr, self)
-        dlg.exec()
-        self.refresh_toolbar()
-
-    def _open_deep_search(self) -> None:
-        pane = self.active_pane
-        if pane and hasattr(pane, 'open_advanced_search'):
-            pane.open_advanced_search()
-
-    def _save_snapshot(self):
-        from PyQt6.QtWidgets import QInputDialog
-        default_name = self._snapshot_auto_name()
-        title = self.config_mgr.get_text(
-            "ui_main_snapshot_dialog_title", "儲存情境快照")
-        label = self.config_mgr.get_text(
-            "ui_main_snapshot_dialog_label", "快照名稱：")
-        name, ok = QInputDialog.getText(self, title, label, text=default_name)
-        if not ok or not name.strip():
-            return
-        l_paths = [self.left_tabs.widget(i).path_edit.text()
-                   for i in range(self.left_tabs.count())]
-        r_paths = [self.right_tabs.widget(i).path_edit.text()
-                   for i in range(self.right_tabs.count())]
-        sizes = self.splitter.sizes()
-        self.config_mgr.add_snapshot(name.strip(), l_paths, r_paths, sizes)
-        msg = self.config_mgr.get_text(
-            "ui_main_toast_snapshot_saved", "情境快照「{}」已儲存").format(name.strip())
-        self.show_toast(msg, "success")
-
-    def _restore_snapshot(self, snap: dict):
-        # 清除現有分頁
-        for tw in [self.left_tabs, self.right_tabs]:
-            while tw.count():
-                tw.removeTab(0)
-        self.active_pane = None
-        # 還原分頁
-        for p in snap.get("left_tabs", []):
-            self.add_new_tab(self.left_tabs, p)
-        for p in snap.get("right_tabs", []):
-            self.add_new_tab(self.right_tabs, p)
-        # 還原分割比例
-        sizes = snap.get("splitter_sizes")
-        if sizes and len(sizes) == 2 and sum(sizes) > 0:
-            self.splitter.setSizes(sizes)
-        msg = self.config_mgr.get_text(
-            "ui_main_toast_snapshot_restored", "已還原情境快照「{}」").format(snap['name'])
-        self.show_toast(msg, "info")
-
-    def _delete_snapshot(self, index: int):
-        self.config_mgr.delete_snapshot(index)
-
-    # ────────────────────────────────────────────────────────────────────────────
-
-    def set_status_msg(self, text, style_type="info"):
-        """設定即時訊息內容與樣式，支援 [Key] 鍵帽化顯示。"""
-        if style_type == "tip" and "[" in text:
-            # 1. 預處理：先將「雙空格 (大群組間距)」與「單空格 (鍵與文字間距)」替換成唯一標記
-            text = text.replace("💡", "💡&nbsp;")
-            text = text.replace("  ", "{{GAP_L}}").replace(" ", "{{GAP_S}}")
-
-            # 2. 定義鍵帽樣式 (VS Code Dark 風格：深灰色背景 + 淡灰色邊框)
-            kbd_style = (
-                "background-color: #333842; color: #abb2bf; "
-                "border: 1px solid #1a1e23; border-radius: 4px; "
-                "font-family: 'Consolas', 'Courier New', monospace; "
-                "font-size: 11px; padding: 1px 3px;"
-            )
-
-            # 3. 轉換 [按鍵] 為實體鍵帽 HTML 標籤
-            text = re.sub(r'\[([^\]]+)\]',
-                          f'<span style="{kbd_style}">&nbsp;\\1&nbsp;</span>', text)
-
-            # 4. 還原標記：GAP_L 為群組間距(4格)，GAP_S 為鍵與字間距(1格)
-            text = text.replace("{{GAP_L}}", "&nbsp;" * 4)
-            text = text.replace("{{GAP_S}}", "&nbsp;")
-
-        self.msg_label.setText(text)
-        self.msg_label.setProperty("type", style_type)
-        self.msg_label.style().unpolish(self.msg_label)
-        self.msg_label.style().polish(self.msg_label)
-
-    def _update_pane_status(self, text: str):
-        """更新狀態列右側的 pane 資訊"""
-        self.pane_status_label.setText(text)
-
-    def show_toast(self, message: str, kind: str = "info", duration: int = 3000) -> None:
-        """顯示非阻塞 Toast 通知（右下角，自動消失）。"""
-        from ui.widgets.toast import show_toast as _show_toast
-        _show_toast(self, message, kind, duration)
-
-    def register_undo(self, pairs: list, kind: str) -> None:
-        """記錄一筆可復原操作（copy 不記錄）。"""
-        if self._undoing or kind == "copy":
-            return
-        from core.undo_stack import UndoEntry
-        self.undo_stack.push(UndoEntry(kind=kind, pairs=list(pairs)))
-
-    def undo_last(self) -> None:
-        """Ctrl+Z：復原最後一次 move 或 rename。"""
-        entry = self.undo_stack.pop()
-        if entry is None:
-            self.show_toast(self.config_mgr.get_text(
-                "ui_main_undo_nothing", "沒有可復原的操作"), "info")
-            return
-
-        self._undoing = True
-        try:
-            if entry.kind == "move":
-                reversed_pairs = [(dst, src) for src, dst in entry.pairs]
-                pane = self.active_pane
-                if pane:
-                    pane._file_view().perform_operation(reversed_pairs, "move")
-            elif entry.kind == "rename":
-                for old_path, new_path in entry.pairs:
-                    try:
-                        os.rename(new_path, old_path)
-                    except OSError as e:
-                        self.show_toast(self.config_mgr.get_text(
-                            "ui_main_undo_failed", "復原失敗: {}").format(e), "error")
-                        return
-                self.refresh_all_panes()
-                self.show_toast(self.config_mgr.get_text(
-                    "ui_main_undo_rename_done", "已復原重新命名"), "success")
-            elif entry.kind == "trash":
-                import winshell
-                failed = []
-                for original_path, _ in entry.pairs:
-                    try:
-                        norm_path = os.path.abspath(
-                            os.path.normpath(original_path))
-                        winshell.undelete(norm_path)
-                    except Exception as e:
-                        failed.append(
-                            f"{os.path.basename(original_path)} ({e})")
-                self.refresh_all_panes()
-                if failed:
-                    self.show_toast(self.config_mgr.get_text(
-                        "ui_main_undo_trash_partial_fail", "部分還原失敗：{}").format(', '.join(failed)), "error")
-                else:
-                    self.show_toast(self.config_mgr.get_text(
-                        "ui_main_undo_trash_done", "已從回收筒還原 {} 個項目").format(len(entry.pairs)), "success")
-        finally:
-            self._undoing = False
-
-    def flash_tab_hint(self):
-        """閃爍顯示分頁切換提示"""
-        if hasattr(self, "_flash_timer") and self._flash_timer.isActive():
-            return
-
-        original_text = self.msg_label.text()
-        self.set_status_msg(self.config_mgr.get_text(
-            "ui_main_flash_tab_hint", "[Tab] 切換分頁"), "tip")
-
-        self._flash_step = 0
-        self._flash_timer = QTimer(self)
-
-        def toggle():
-            self._flash_step += 1
-            # 切換閃爍屬性
-            flashing = (self._flash_step % 2 == 1)
-            self.msg_label.setProperty(
-                "flash", "true" if flashing else "false")
-            self.msg_label.style().unpolish(self.msg_label)
-            self.msg_label.style().polish(self.msg_label)
-
-            if self._flash_step >= 6:  # 閃爍 3 次 (開關各一次為 1 step，0.5s * 6 = 3s)
-                self._flash_timer.stop()
-                self.msg_label.setProperty("flash", "false")
-                self.set_status_msg(original_text, "tip")
-
-        self._flash_timer.timeout.connect(toggle)
-        self._flash_timer.start(500)
-
     def on_toolbar_context(self, pos):
         """工具列右鍵選單"""
         action = self.tool_bar.actionAt(pos)
@@ -1610,52 +965,3 @@ class MainWindow(QMainWindow):
 
         menu.exec(tw.tabBar().mapToGlobal(pos))
 
-    def open_new_window(self, path):
-        """用 Windows 檔案總管開啟該路徑"""
-        try:
-            os.startfile(path)
-        except Exception as e:
-            self.show_toast(self.config_mgr.get_text(
-                "ui_main_ctx_open_window_failed", "無法開啟新視窗: {}").format(e), "error")
-
-    def on_quick_add_path(self, path):
-        if path and path not in self.custom_paths:
-            self.custom_paths.append(path)
-            self.refresh_toolbar()
-            self.save_config()
-
-    def on_export_folder_tree(self, path: str) -> None:
-        """遞迴產生 ├── 樹狀圖，存成 .txt 後自動開啟。"""
-        from core.models.folder_tree import count_items, generate_tree
-        import tempfile
-
-        if not path or not os.path.isdir(path):
-            QMessageBox.warning(self, self.config_mgr.get_text(
-                "ui_main_warn_title", "警告"), self.config_mgr.get_text("ui_main_warn_select_folder", "請選取一個資料夾。"))
-            return
-
-        ai_settings = self.config_mgr.get_ai_exporter_settings()
-        blacklist = ai_settings.get("blacklist_dirs", [])
-        max_depth = ai_settings.get("max_depth", 10)
-
-        total = count_items(path, blacklist=blacklist, max_depth=max_depth)
-        if total > 1000:
-            reply = QMessageBox.question(
-                self, self.config_mgr.get_text(
-                    "ui_main_warn_too_many_items_title", "項目數量過多"),
-                self.config_mgr.get_text(
-                    "ui_main_warn_too_many_items_msg", "此資料夾共有 {:,} 個項目，產生樹狀圖可能需要一點時間。\n確定繼續？").format(total),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-
-        tree_text = generate_tree(
-            path, blacklist=blacklist, max_depth=max_depth)
-        folder_name = os.path.basename(path.rstrip("/\\")) or "tree"
-        tmp_path = os.path.join(tempfile.gettempdir(),
-                                f"{folder_name}_tree.txt")
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            f.write(tree_text)
-        import subprocess
-        subprocess.Popen(["notepad.exe", tmp_path])

@@ -4,7 +4,6 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QMessageBox, QListWidget, QInputDialog, QCheckBox,
     QTabWidget, QWidget, QFormLayout, QSpinBox, QFileDialog, QFrame,
-    QComboBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -19,9 +18,6 @@ class AppSettingsDialog(QDialog):
         self.config_mgr = config_mgr
         self._config_mgr = config_mgr
         s = config_mgr.get_app_settings()
-        self._backup_theme = s["theme_name"]
-        self._backup_lang = s.get("language", "zh_TW")
-        self._block_theme_signal = False
 
         title = self.config_mgr.get_text(
             "ui_dialog_settings_title", "設定") if self.config_mgr else "設定"
@@ -37,9 +33,12 @@ class AppSettingsDialog(QDialog):
         tabs = QTabWidget()
         root.addWidget(tabs)
 
-        tabs.addTab(self._tab_appearance(s), "🎨 外觀")
-        tabs.addTab(self._tab_index(s),      "🔍 索引")
-        tabs.addTab(self._tab_behavior(s),   "⚙️ 行為")
+        for builder, label in [
+            (self._tab_appearance, "🎨 外觀"),
+            (self._tab_index,      "🔍 索引"),
+            (self._tab_behavior,   "⚙️ 行為"),
+        ]:
+            tabs.addTab(builder(s), label)
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(12, 8, 12, 0)
@@ -90,26 +89,6 @@ class AppSettingsDialog(QDialog):
     def _tab_appearance(self, s: dict) -> QWidget:
         w, f = self._form_widget()
 
-        self._theme_combo = QComboBox()
-        self._theme_combo.addItems(self.config_mgr.get_theme_names())
-        self._theme_combo.setCurrentText(s["theme_name"])
-        self._theme_combo.currentTextChanged.connect(self._on_theme_changed)
-        f.addRow(self.config_mgr.get_text(
-            "ui_dialog_settings_label_theme", "主題："), self._theme_combo)
-
-        self._lang_combo = QComboBox()
-        l_zh = self.config_mgr.get_text("ui_lang_zh_TW", "繁體中文")
-        l_en = self.config_mgr.get_text("ui_lang_en_US", "English")
-        self._lang_options = [(l_zh, "zh_TW"), (l_en, "en_US")]
-        self._lang_combo.addItems([name for name, _ in self._lang_options])
-        cur_lang = s.get("language", "zh_TW")
-        for i, (_, code) in enumerate(self._lang_options):
-            if code == cur_lang:
-                self._lang_combo.setCurrentIndex(i)
-                break
-        f.addRow(self.config_mgr.get_text(
-            "ui_dialog_settings_label_lang", "語言："), self._lang_combo)
-
         self._restore_session_chk = QCheckBox(
             self.config_mgr.get_text("ui_dialog_settings_restore_session", "啟動時還原上一次的分頁"))
         self._restore_session_chk.setChecked(
@@ -119,12 +98,6 @@ class AppSettingsDialog(QDialog):
 
         return w
 
-    def _on_theme_changed(self, theme_name: str) -> None:
-        if self._block_theme_signal:
-            return
-        self._config_mgr.apply_theme_preset(theme_name)
-        self.theme_changed.emit()
-
     # ── Tab 2: 索引 ────────────────────────────────────────────────────────────
 
     def _tab_index(self, s: dict) -> QWidget:
@@ -132,11 +105,16 @@ class AppSettingsDialog(QDialog):
         layout = QVBoxLayout(outer)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        layout.addWidget(self._build_common_index_section(s))
+        self._master_section = self._build_master_node_section(s)
+        layout.addWidget(self._master_section)
+        layout.addStretch()
+        self._master_section.setVisible(s.get("is_master_node", False))
+        return outer
 
-        # ── 共用欄位（Master + Consumer 都需要）──────────────────────────────
-        w_common, f_common = self._form_widget()
+    def _build_common_index_section(self, s: dict) -> QWidget:
+        w, f = self._form_widget()
 
-        # 角色
         self._is_master_chk = QCheckBox(
             self.config_mgr.get_text("ui_dialog_settings_master_mode", "啟用生產者模式 (Master Node)"))
         self._is_master_chk.setChecked(s.get("is_master_node", False))
@@ -144,125 +122,99 @@ class AppSettingsDialog(QDialog):
             self.config_mgr.get_text("ui_dialog_settings_master_mode_tip",
                                      "僅公司主機需要開啟。開啟後負責執行背景掃描並發布索引。"))
         self._is_master_chk.toggled.connect(self._on_master_toggled)
-        f_common.addRow(self.config_mgr.get_text("ui_dialog_settings_label_role", "運行角色："),
-                        self._is_master_chk)
+        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_role", "運行角色："),
+                 self._is_master_chk)
 
-        # 團隊索引存放路徑
         self._remote_root_edit = QLineEdit(s.get("remote_index_root", ""))
         self._remote_root_edit.setPlaceholderText(
             self.config_mgr.get_text("ui_dialog_settings_remote_root_placeholder", "K:\\... 資料庫存放路徑"))
         browse_remote = QPushButton("📂")
         browse_remote.setFixedWidth(32)
-        browse_remote.clicked.connect(
-            lambda: self._browse_dir(self._remote_root_edit))
+        browse_remote.clicked.connect(lambda: self._browse_dir(self._remote_root_edit))
         row_remote = QHBoxLayout()
         row_remote.addWidget(self._remote_root_edit)
         row_remote.addWidget(browse_remote)
-        f_common.addRow(self.config_mgr.get_text("ui_dialog_settings_label_remote_root", "團隊索引存放路徑："),
-                        row_remote)
+        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_remote_root", "團隊索引存放路徑："),
+                 row_remote)
 
-        # 搜尋結果上限
         self._limit_spin = QSpinBox()
         self._limit_spin.setRange(100, 50000)
         self._limit_spin.setSingleStep(100)
         self._limit_spin.setValue(s.get("search_limit", 1000))
-        f_common.addRow(self.config_mgr.get_text("ui_dialog_settings_label_limit", "搜尋結果上限："),
-                        self._limit_spin)
+        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_limit", "搜尋結果上限："),
+                 self._limit_spin)
 
-        layout.addWidget(w_common)
+        return w
 
-        # ── Master-only 區塊（可 show/hide）──────────────────────────────────
-        self._master_section = QWidget()
-        layout.addWidget(self._master_section)
-        ms_layout = QVBoxLayout(self._master_section)
+    def _build_master_node_section(self, s: dict) -> QWidget:
+        container = QWidget()
+        ms_layout = QVBoxLayout(container)
         ms_layout.setContentsMargins(0, 0, 0, 0)
         ms_layout.setSpacing(0)
 
-        w_master, f_master = self._form_widget()
+        w, f = self._form_widget()
 
-        f_master.addRow(self._separator())
-        f_master.addRow(self._muted_label(
+        f.addRow(self._separator())
+        f.addRow(self._muted_label(
             self.config_mgr.get_text("ui_dialog_settings_monitored_note",
                                      "Master Node 掃描的來源資料夾（如 C:\\, K:\\Project）")))
 
-        # 監控路徑清單
         self._path_list = QListWidget()
         self._path_list.setMaximumHeight(120)
         for p in s.get("monitored_paths", []):
             self._path_list.addItem(p)
-        f_master.addRow(self._path_list)
+        f.addRow(self._path_list)
 
-        btn_add_text = self.config_mgr.get_text(
-            "ui_dialog_settings_btn_add_path", "新增路徑")
-        btn_rm_text = self.config_mgr.get_text(
-            "ui_dialog_settings_btn_remove_path", "移除所選")
-        add_btn = QPushButton(btn_add_text)
+        add_btn = QPushButton(self.config_mgr.get_text("ui_dialog_settings_btn_add_path", "新增路徑"))
         add_btn.clicked.connect(self._on_add_monitored_path)
-        rm_btn = QPushButton(btn_rm_text)
+        rm_btn = QPushButton(self.config_mgr.get_text("ui_dialog_settings_btn_remove_path", "移除所選"))
         rm_btn.clicked.connect(self._on_remove_monitored_path)
         path_btns = QHBoxLayout()
         path_btns.addWidget(add_btn)
         path_btns.addWidget(rm_btn)
         path_btns.addStretch()
-        f_master.addRow(path_btns)
+        f.addRow(path_btns)
 
-        # 掃描深度
         self._depth_spin = QSpinBox()
         self._depth_spin.setRange(1, 20)
         self._depth_spin.setValue(s.get("network_scan_depth", 7))
-        f_master.addRow(
-            self.config_mgr.get_text("ui_dialog_settings_label_depth", "資料夾搜尋深度 (1-20 層)："),
-            self._depth_spin)
+        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_depth", "資料夾搜尋深度 (1-20 層)："),
+                 self._depth_spin)
 
-        # 排除副檔名
         _default_exts = [".tmp", ".bak", ".log", ".cache", ".thumbs", ".db-wal", ".db-shm", ".lock"]
-        _excl_exts = s.get("exclude_exts") or _default_exts
-        self._excl_exts_edit = QLineEdit(", ".join(_excl_exts))
+        self._excl_exts_edit = QLineEdit(", ".join(s.get("exclude_exts") or _default_exts))
         self._excl_exts_edit.setPlaceholderText(".tmp, .bak, .log")
-        f_master.addRow(
-            self.config_mgr.get_text("ui_dialog_settings_label_excl_exts", "排除副檔名（逗號分隔）："),
-            self._excl_exts_edit)
+        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_excl_exts", "排除副檔名（逗號分隔）："),
+                 self._excl_exts_edit)
 
-        # 排除資料夾關鍵字
         _default_dirs = ["Archive", "Old", "Temp", "_archive", "Backup", "$RECYCLE.BIN"]
-        _excl_dirs = s.get("exclude_dirs") or _default_dirs
-        self._excl_dirs_edit = QLineEdit(", ".join(_excl_dirs))
+        self._excl_dirs_edit = QLineEdit(", ".join(s.get("exclude_dirs") or _default_dirs))
         self._excl_dirs_edit.setPlaceholderText("Archive, Old, Temp")
-        f_master.addRow(
-            self.config_mgr.get_text("ui_dialog_settings_label_excl_dirs", "排除資料夾關鍵字（逗號分隔）："),
-            self._excl_dirs_edit)
+        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_excl_dirs", "排除資料夾關鍵字（逗號分隔）："),
+                 self._excl_dirs_edit)
 
-        f_master.addRow(self._separator())
-        f_master.addRow(self._muted_label(
+        f.addRow(self._separator())
+        f.addRow(self._muted_label(
             self.config_mgr.get_text("ui_dialog_settings_nightly_note",
                                      "夜間自動掃描索引的執行時間（24小時制）")))
 
-        # 夜間排程
         self._hour_spin = QSpinBox()
         self._hour_spin.setRange(0, 23)
         self._hour_spin.setValue(s.get("nightly_scan_hour", 2))
-        self._hour_spin.setSuffix(self.config_mgr.get_text(
-            "ui_dialog_settings_hour_suffix", " 時"))
-        f_master.addRow(self.config_mgr.get_text("ui_dialog_settings_label_nightly_hour", "夜間掃描時間："),
-                        self._hour_spin)
+        self._hour_spin.setSuffix(self.config_mgr.get_text("ui_dialog_settings_hour_suffix", " 時"))
+        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_nightly_hour", "夜間掃描時間："),
+                 self._hour_spin)
 
         self._min_spin = QSpinBox()
         self._min_spin.setRange(0, 59)
         self._min_spin.setValue(s.get("nightly_scan_minute", 0))
-        self._min_spin.setSuffix(self.config_mgr.get_text(
-            "ui_dialog_settings_min_suffix", " 分"))
-        f_master.addRow(self.config_mgr.get_text("ui_dialog_settings_label_nightly_minute", "分鐘："),
-                        self._min_spin)
+        self._min_spin.setSuffix(self.config_mgr.get_text("ui_dialog_settings_min_suffix", " 分"))
+        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_nightly_minute", "分鐘："),
+                 self._min_spin)
 
-        ms_layout.addWidget(w_master)
+        ms_layout.addWidget(w)
         ms_layout.addStretch()
-
-        layout.addStretch()
-
-        # 初始可見性
-        self._master_section.setVisible(s.get("is_master_node", False))
-
-        return outer
+        return container
 
     def _on_master_toggled(self, checked: bool) -> None:
         if checked:
@@ -307,9 +259,18 @@ class AppSettingsDialog(QDialog):
     # ── Tab 3: 行為 ────────────────────────────────────────────────────────────
 
     def _tab_behavior(self, s: dict) -> QWidget:
+        outer = QWidget()
+        layout = QVBoxLayout(outer)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._build_view_section(s))
+        layout.addWidget(self._build_paste_section(s))
+        layout.addStretch()
+        return outer
+
+    def _build_view_section(self, s: dict) -> QWidget:
         w, f = self._form_widget()
 
-        # 預覽字體
         self._preview_font_spin = QSpinBox()
         self._preview_font_spin.setRange(9, 24)
         self._preview_font_spin.setValue(s.get("preview_font_size", 14))
@@ -317,7 +278,6 @@ class AppSettingsDialog(QDialog):
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_preview_font", "預覽字體大小："),
                  self._preview_font_spin)
 
-        # PDF 預覽頁數
         self._pdf_pages_spin = QSpinBox()
         self._pdf_pages_spin.setRange(1, 20)
         self._pdf_pages_spin.setValue(s.get("pdf_preview_max_pages", 3))
@@ -326,46 +286,44 @@ class AppSettingsDialog(QDialog):
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_pdf_pages", "PDF 預覽頁數："),
                  self._pdf_pages_spin)
 
-        # 刪除防呆
         self._confirm_delete_chk = QCheckBox(
             self.config_mgr.get_text("ui_dialog_settings_confirm_delete", "刪除檔案前顯示確認視窗"))
-        self._confirm_delete_chk.setChecked(
-            s.get("confirm_before_delete", False))
+        self._confirm_delete_chk.setChecked(s.get("confirm_before_delete", False))
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_delete", "刪除防呆："),
                  self._confirm_delete_chk)
+
+        return w
+
+    def _build_paste_section(self, s: dict) -> QWidget:
+        w, f = self._form_widget()
 
         f.addRow(self._separator())
         f.addRow(self._muted_label(
             self.config_mgr.get_text("ui_dialog_settings_paste_note",
                                      "「貼上為檔案」功能的命名規則（支援 strftime 格式）")))
 
-        # 圖片貼上
         default_img = self.config_mgr.get_text("paste_prefix_image", "剪貼圖")
         self._img_prefix_edit = QLineEdit(s.get("image_prefix", default_img))
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_img_prefix", "圖片前綴："),
                  self._img_prefix_edit)
 
-        self._img_format_edit = QLineEdit(
-            s.get("image_format", "%Y%m%d_%H%M%S"))
+        self._img_format_edit = QLineEdit(s.get("image_format", "%Y%m%d_%H%M%S"))
         self._img_format_edit.setPlaceholderText("例: %Y%m%d_%H%M%S")
         self._img_format_edit.textChanged.connect(self._update_format_preview)
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_img_format", "圖片日期格式："),
                  self._img_format_edit)
 
-        # 文字貼上
         default_txt = self.config_mgr.get_text("paste_prefix_text", "文字筆記")
         self._txt_prefix_edit = QLineEdit(s.get("text_prefix", default_txt))
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_txt_prefix", "文字前綴："),
                  self._txt_prefix_edit)
 
-        self._txt_format_edit = QLineEdit(
-            s.get("text_format", "%Y%m%d_%H%M%S"))
+        self._txt_format_edit = QLineEdit(s.get("text_format", "%Y%m%d_%H%M%S"))
         self._txt_format_edit.setPlaceholderText("例: %Y%m%d_%H%M%S")
         self._txt_format_edit.textChanged.connect(self._update_format_preview)
         f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_txt_format", "文字日期格式："),
                  self._txt_format_edit)
 
-        # 格式預覽
         self._format_preview_label = QLabel()
         preview_qss = "color: {{accent}}; font-size: 11px; font-weight: bold;"
         if self._config_mgr:
@@ -414,7 +372,6 @@ class AppSettingsDialog(QDialog):
     # ── Accept / Reject ────────────────────────────────────────────────────────
 
     def accept(self) -> None:
-        self._config_mgr.apply_theme_preset(self._theme_combo.currentText())
         m_paths = [self._path_list.item(i).text()
                    for i in range(self._path_list.count())]
 
@@ -436,23 +393,9 @@ class AppSettingsDialog(QDialog):
             "network_scan_depth":    self._depth_spin.value(),
             "exclude_exts":          [e.strip() for e in self._excl_exts_edit.text().split(",") if e.strip()],
             "exclude_dirs":          [d.strip() for d in self._excl_dirs_edit.text().split(",") if d.strip()],
-            "language":              self._lang_options[self._lang_combo.currentIndex()][1],
         })
         self.theme_changed.emit()
-
-        new_lang = self._lang_options[self._lang_combo.currentIndex()][1]
-        if new_lang != self._backup_lang:
-            QMessageBox.information(
-                self,
-                self.config_mgr.get_text(
-                    "ui_dialog_settings_lang_changed_title", "語言已變更"),
-                self.config_mgr.get_text("ui_dialog_settings_lang_changed_msg",
-                                         "語言設定已儲存，重新啟動應用程式後生效。"))
         super().accept()
 
     def reject(self) -> None:
-        self._block_theme_signal = True
-        self._config_mgr.apply_theme_preset(self._backup_theme)
-        self._block_theme_signal = False
-        self.theme_changed.emit()
         super().reject()

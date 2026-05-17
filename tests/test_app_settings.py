@@ -53,13 +53,6 @@ def tmp_config_dir(tmp_path):
             "image_format": "%Y%m%d_%H%M%S",
             "text_format": "%Y%m%d_%H%M%S"
         },
-        "ai_exporter_settings": {
-            "whitelist_exts": [".py", " .txt ", ".md", "  ", ".json"],
-            "blacklist_dirs": [".git", "__pycache__", "node_modules"],
-            "file_size_limit_kb": 100,
-            "total_size_limit_mb": 2,
-            "max_depth": 5
-        }
     }
     config_file = tmp_path / "config.json"
     config_file.write_text(json.dumps(config, ensure_ascii=False, indent=4), encoding="utf-8")
@@ -106,7 +99,6 @@ class TestConfigManagerDataLayer:
             "text_format": "%H%M",
             "is_master_node": True,
             "monitored_paths": ["D:/Folder1", "E:/Folder2"],
-            "ai_blacklist_dirs": ["dist", "build", ".vscode"],
         }
         result = cfg.save_app_settings(new_settings)
         assert result is True
@@ -145,12 +137,6 @@ class TestConfigManagerDataLayer:
         assert paste["text_prefix"] == "TXT"
         assert paste["text_format"] == "%H%M%S"
 
-    def test_save_ai_blacklist_dirs_nested(self, cfg):
-        """TC-05: AI 匯出排除目錄正確寫入 ai_exporter_settings。"""
-        cfg.save_app_settings({"ai_blacklist_dirs": ["logs", "tmp"]})
-        config = cfg.load_config()
-        assert config["ai_exporter_settings"]["blacklist_dirs"] == ["logs", "tmp"]
-
     def test_partial_save_preserves_other_keys(self, cfg):
         """TC-06: 部分儲存不會覆蓋其他未觸及的 key。"""
         cfg.save_app_settings({"search_limit": 9999})
@@ -162,34 +148,7 @@ class TestConfigManagerDataLayer:
 
 
 # ============================================================================
-# Test Suite 2: AI Exporter 副檔名空白清理 (.strip() 防呆)
-# ============================================================================
-
-class TestAIExporterSanitization:
-    """驗證 get_ai_exporter_settings 的 .strip() 清理功能。"""
-
-    def test_whitelist_strip_spaces(self, cfg):
-        """TC-07: 副檔名前後空白被正確移除。"""
-        settings = cfg.get_ai_exporter_settings()
-        assert ".txt" in settings["whitelist_exts"]
-        assert " .txt " not in settings["whitelist_exts"]
-
-    def test_whitelist_empty_entries_removed(self, cfg):
-        """TC-08: 純空白項目被過濾。"""
-        settings = cfg.get_ai_exporter_settings()
-        assert "" not in settings["whitelist_exts"]
-        assert "  " not in settings["whitelist_exts"]
-
-    def test_whitelist_valid_entries_preserved(self, cfg):
-        """TC-09: 正常項目不受影響。"""
-        settings = cfg.get_ai_exporter_settings()
-        assert ".py" in settings["whitelist_exts"]
-        assert ".md" in settings["whitelist_exts"]
-        assert ".json" in settings["whitelist_exts"]
-
-
-# ============================================================================
-# Test Suite 3: get_app_settings 整合讀取
+# Test Suite 2: get_app_settings 整合讀取
 # ============================================================================
 
 class TestGetAppSettings:
