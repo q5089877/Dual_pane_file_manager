@@ -3,8 +3,7 @@ import fnmatch
 from core.system_utils import path_exists_fast as _path_exists_fast
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QToolButton, QPushButton,
-    QStackedWidget, QMessageBox, QLabel, QFrame, QTreeView, QAbstractItemView,
-    QHeaderView as _QHeaderView,
+    QStackedWidget, QMessageBox, QLabel, QFrame, QTreeView,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QDir, QThread, QSortFilterProxyModel, QTimer, QPoint, pyqtSlot, QDateTime, QDate
 from PyQt6.QtGui import QFileSystemModel, QIcon, QStandardItemModel, QStandardItem
@@ -12,7 +11,6 @@ from PyQt6.QtGui import QFileSystemModel, QIcon, QStandardItemModel, QStandardIt
 import shutil
 from ui.widgets.file_tree_view import FileTreeView
 from ui.widgets.file_list_view import FileListView
-from ui.widgets.dialogs import SearchDialog
 from ui.widgets.quick_look_delegate import QuickLookDelegate
 
 from core.interfaces import IExplorerView
@@ -493,11 +491,7 @@ class _ExplorerViewAdapter(IExplorerView):
             cwd = os.path.dirname(path) if os.path.isfile(path) else path
             # 使用 cwd 參數可以確保開啟的程式（如 exe/捷徑）的「工作目錄」正確指向它所在的資料夾，
             # 避免它錯誤地使用雙視窗檔案總管的目錄作為工作目錄。
-            import sys
-            if sys.version_info >= (3, 10):
-                os.startfile(path, "open", cwd=cwd)
-            else:
-                os.startfile(path, "open")
+            os.startfile(path, "open", cwd=cwd)
         except OSError as e:
             # 1223 = user cancelled the UAC/security prompt
             if getattr(e, 'winerror', None) != 1223:
@@ -1235,10 +1229,10 @@ class ExplorerPane(QWidget):
         else:
             self._deactivate_search_mode()
 
-    def open_advanced_search(self):
-        from ui.widgets.dialogs import SearchDialog
-        SearchDialog(self.model.rootPath(),
-                     self.config_mgr, self).showMaximized()
+    def open_advanced_search(self) -> None:
+        win = self.window()
+        if hasattr(win, 'add_search_tab'):
+            win.add_search_tab(self)
 
     def _is_search_active(self) -> bool:
         """判斷目前是否處於搜尋狀態 (包含關鍵字或進階篩選)。"""

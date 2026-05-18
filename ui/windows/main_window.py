@@ -447,7 +447,10 @@ class MainWindow(
 
     def close_tab(self, tw, idx):
         if tw.count() > 1:
-            tw.widget(idx).deleteLater()
+            w = tw.widget(idx)
+            if hasattr(w, 'cleanup'):
+                w.cleanup()
+            w.deleteLater()
             tw.removeTab(idx)
             self.save_config()
             self.update_tab_ui()
@@ -463,6 +466,11 @@ class MainWindow(
         for tw in [self.left_tabs, self.right_tabs]:
             for i in range(tw.count()):
                 p = tw.widget(i)
+                if getattr(p, '_is_search_tab', False):
+                    btn = tw.tabBar().tabButton(i, QTabBar.ButtonPosition.RightSide)
+                    if btn:
+                        btn.setVisible(True)
+                    continue
                 path = p._current_path
                 if path == HOME_PATH or not path:
                     tw.setTabText(i, self.config_mgr.get_text(
@@ -478,11 +486,40 @@ class MainWindow(
                 if btn:
                     btn.setVisible(tw.count() > 1)
 
-        # Same-path warning
-        lp = self.left_tabs.currentWidget()._current_path if self.left_tabs.count() else ""
-        rp = self.right_tabs.currentWidget()._current_path if self.right_tabs.count() else ""
+        # Same-path warning (skip search tabs)
+        lw = self.left_tabs.currentWidget()
+        rw = self.right_tabs.currentWidget()
+        lp = getattr(lw, '_current_path', '') if lw else ""
+        rp = getattr(rw, '_current_path', '') if rw else ""
         self.same_path_bar.setVisible(bool(lp and rp and lp == rp))
         self.save_config()
+
+    def add_search_tab(self, source_pane) -> None:
+        tw = next(
+            (t for t in [self.left_tabs, self.right_tabs]
+             for i in range(t.count()) if t.widget(i) is source_pane),
+            None)
+        if tw is None:
+            return
+        if tw.count() >= self._MAX_TABS:
+            self.show_toast(self.config_mgr.get_text(
+                "ui_main_toast_tab_limit", "最多 5 個分頁"), "warning")
+            return
+        from ui.widgets.search_panel import SearchPanel
+        panel = SearchPanel(source_pane.model.rootPath(), self.config_mgr, self)
+        idx = tw.addTab(panel, "🔍 搜尋")
+        tw.setCurrentIndex(idx)
+        panel.close_requested.connect(lambda: self._close_search_tab(tw, panel))
+        panel.focus_search()
+        self.update_tab_ui()
+
+    def _close_search_tab(self, tw, panel) -> None:
+        panel.cleanup()
+        idx = tw.indexOf(panel)
+        if idx >= 0:
+            tw.widget(idx).deleteLater()
+            tw.removeTab(idx)
+            self.update_tab_ui()
 
     def _on_tab_bar_clicked(self, tw):
         """點擊 tab bar（含已選中的分頁）時切換 panel 焦點；預覽中則先關閉預覽。"""
@@ -499,12 +536,15 @@ class MainWindow(
         w = tw.widget(idx)
         if w:
             self.set_active_pane(w)
-            w.update_status_info()
-            # 切換分頁時，強制讓該分頁的檔案列表獲得焦點，避免 Tab 鍵失效
-            w.view_stack.currentWidget().setFocus()
-        # 更新兩側同路徑警告
-        lp = self.left_tabs.currentWidget()._current_path if self.left_tabs.count() else ""
-        rp = self.right_tabs.currentWidget()._current_path if self.right_tabs.count() else ""
+            if getattr(w, '_is_search_tab', False):
+                w.focus_search()
+            else:
+                w.update_status_info()
+                w.view_stack.currentWidget().setFocus()
+        lw = self.left_tabs.currentWidget()
+        rw = self.right_tabs.currentWidget()
+        lp = getattr(lw, '_current_path', '') if lw else ""
+        rp = getattr(rw, '_current_path', '') if rw else ""
         self.same_path_bar.setVisible(bool(lp and rp and lp == rp))
 
     def save_config(self):
@@ -512,9 +552,11 @@ class MainWindow(
 
     def _internal_save_config(self):
         l_paths = [self.left_tabs.widget(i).path_edit.text()
-                   for i in range(self.left_tabs.count())]
+                   for i in range(self.left_tabs.count())
+                   if not getattr(self.left_tabs.widget(i), '_is_search_tab', False)]
         r_paths = [self.right_tabs.widget(i).path_edit.text()
-                   for i in range(self.right_tabs.count())]
+                   for i in range(self.right_tabs.count())
+                   if not getattr(self.right_tabs.widget(i), '_is_search_tab', False)]
         sizes = self.splitter.sizes()
         self.config_mgr.save_config(self.custom_paths, l_paths, r_paths,
                                     splitter_sizes=sizes if sum(sizes) > 0 else None)
@@ -653,7 +695,8 @@ class MainWindow(
         self.update()
 
     def set_active_pane(self, pane):
-        self.active_pane = pane
+        if not getattr(pane, '_is_search_tab', False):
+            self.active_pane = pane
         l_foc = any(self.left_tabs.widget(i) ==
                     pane for i in range(self.left_tabs.count()))
         self.left_tabs.setObjectName(
@@ -679,7 +722,7 @@ class MainWindow(
         for side in [self.left_tabs, self.right_tabs]:
             for i in range(side.count()):
                 p = side.widget(i)
-                if p is None:
+                if p is None or getattr(p, '_is_search_tab', False):
                     continue
                 active = (p == self.active_pane)
                 p.setObjectName("activePane" if active else "inactivePane")
@@ -692,7 +735,9 @@ class MainWindow(
     def refresh_all_panes(self):
         for tw in [self.left_tabs, self.right_tabs]:
             for i in range(tw.count()):
-                tw.widget(i).refresh()
+                w = tw.widget(i)
+                if not getattr(w, '_is_search_tab', False):
+                    w.refresh()
 
     def on_ctrl_left(self): self.presenter.sync_to_left()
     def on_ctrl_right(self): self.presenter.sync_to_right()
@@ -715,7 +760,10 @@ class MainWindow(
         target_pane = tw.widget(next_idx)
         tw.setCurrentIndex(next_idx)
         if target_pane:
-            target_pane.view_stack.currentWidget().setFocus()
+            if getattr(target_pane, '_is_search_tab', False):
+                target_pane.focus_search()
+            else:
+                target_pane.view_stack.currentWidget().setFocus()
             self.set_active_pane(target_pane)
 
     def switch_side_focus(self):
@@ -729,7 +777,10 @@ class MainWindow(
         tw = self.right_tabs if is_left else self.left_tabs
         pane = tw.currentWidget()
         if pane:
-            pane.view_stack.currentWidget().setFocus()
+            if getattr(pane, '_is_search_tab', False):
+                pane.focus_search()
+            else:
+                pane.view_stack.currentWidget().setFocus()
             self.set_active_pane(pane)
 
     def _get_opposite_pane(self):
