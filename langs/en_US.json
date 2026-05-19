@@ -47,7 +47,7 @@
   "ui_dialog_search_role_master": "🛠️ Master Mode - Scanning local & publishing",
   "ui_dialog_search_refresh_tooltip_local": "Update local index (C:\\)",
   "ui_dialog_search_role_local": "✅ Local Search Mode",
-  "ui_dialog_search_role_consumer": "🌐 Consumer Mode (Slot {}): Shared index detected",
+  "ui_dialog_search_role_consumer": "🌐 Shared index detected",
   "ui_dialog_search_status_local_only": "✅ Local Mode",
   "ui_dialog_search_err_remote_failed": "❌ Warning: Failed to access shared path {}",
   "ui_dialog_search_status_connected": "✅ Connected to shared index",

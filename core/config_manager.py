@@ -150,6 +150,12 @@ class ConfigManager:
             }
             changed = True
 
+        if "nas_relative_path" not in config:
+            config["nas_relative_path"] = (
+                r"SHL TECH\_STEC_Staff\Neil\效率提升軟體\K槽檔案尋找資料庫存放區"
+            )
+            changed = True
+
         return changed
 
     def get_update_source_path(self):
@@ -236,6 +242,10 @@ class ConfigManager:
 
     def get_master_password(self) -> str:
         return self.load_config().get("master_node_password", "1235")
+
+    def is_admin_mode(self) -> bool:
+        """此節點是否為管理者/生產者模式。"""
+        return bool(self.load_config().get("is_master_node", False))
 
     def apply_theme_preset(self, theme_name: str) -> bool:
         """將指定的內建主題寫入 theme.json。找不到對應 preset 時靜默忽略。"""

@@ -104,3 +104,31 @@ def is_reparse_point(path):
         return bool(attrs & FILE_ATTRIBUTE_REPARSE_POINT)
     except Exception:
         return False
+
+
+def discover_nas_root(relative_path: str) -> str | None:
+    """Scan REMOTE drive letters for {drive}\\relative_path\\current_version.txt.
+
+    Uses GetDriveTypeW to skip non-network drives without touching them (防卡死).
+    Returns the full path on success, None if not found.
+    """
+    if not relative_path:
+        return None
+    import string as _string
+    DRIVE_REMOTE = 4
+    try:
+        get_type = ctypes.windll.kernel32.GetDriveTypeW
+    except Exception:
+        return None
+    for letter in _string.ascii_uppercase:
+        drive = f"{letter}:\\"
+        try:
+            if get_type(drive) != DRIVE_REMOTE:
+                continue
+        except Exception:
+            continue
+        candidate = os.path.join(drive, relative_path)
+        version_file = os.path.join(candidate, "current_version.txt")
+        if path_exists_fast(version_file, timeout=2.0):
+            return candidate
+    return None

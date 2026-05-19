@@ -719,7 +719,7 @@ class SearchDialog(QDialog):
         tip_refresh_local = self.config_mgr.get_text("ui_dialog_search_refresh_tooltip_local", "手動更新個人本機索引 (C:\\)") if self.config_mgr else "手動更新個人本機索引 (C:\\)"
         
         if is_master:
-            role_master = self.config_mgr.get_text("ui_dialog_search_role_master", "🛠️ 生產管理模式 (Master) - 掃描本機並發布至區域路徑") if self.config_mgr else "🛠️ 生產管理模式 (Master) - 掃描本機並發布至區域路徑"
+            role_master = self.config_mgr.get_text("ui_dialog_search_role_master", "🛠️ 生產管理模式") if self.config_mgr else "🛠️ 生產管理模式"
             self.sync_status_label.setText(role_master)
             self.sync_status_label.setStyleSheet(f"color: {_accent}; font-weight: bold;")
             self.k_refresh_btn.setEnabled(True)

@@ -12,11 +12,31 @@ from PyQt6.QtWidgets import (
     QMenu, QToolButton, QTreeView,
     QProgressBar, QStatusBar, QFileIconProvider, QComboBox,
 )
-from PyQt6.QtCore import Qt, QTimer, QFileInfo, pyqtSignal
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QColor, QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, QTimer, QFileInfo, pyqtSignal, QThread
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QKeySequence, QShortcut
 from ui.presenters.search_presenter import SearchPresenter
 from core.interfaces import ISearchView
 from ui.widgets.dialogs import DateSortProxyModel
+from ui.widgets.quick_look_delegate import QuickLookDelegate
+
+
+class _NasDiscoveryWorker(QThread):
+    """Background worker: scans REMOTE drives for the NAS index root."""
+
+    found = pyqtSignal(str)
+    not_found = pyqtSignal()
+
+    def __init__(self, relative_path: str, parent=None):
+        super().__init__(parent)
+        self._relative_path = relative_path
+
+    def run(self) -> None:
+        from core.system_utils import discover_nas_root
+        result = discover_nas_root(self._relative_path)
+        if result:
+            self.found.emit(result)
+        else:
+            self.not_found.emit()
 
 
 class SearchPanel(QWidget):
@@ -85,12 +105,6 @@ class SearchPanel(QWidget):
             f"color: {accent}; font-weight: bold; padding: 2px;")
         row1.addWidget(self.sync_status_label)
 
-        self.close_btn = QToolButton()
-        self.close_btn.setText("✕")
-        self.close_btn.setToolTip("關閉搜尋 (Esc)")
-        self.close_btn.setFixedSize(24, 24)
-        self.close_btn.clicked.connect(self.close_requested.emit)
-        row1.addWidget(self.close_btn)
 
         self.main_layout.addLayout(row1)
 
@@ -98,25 +112,26 @@ class SearchPanel(QWidget):
         row2 = QHBoxLayout()
         row2.setSpacing(4)
 
-        config = self.presenter.config_mgr.load_config()
-        monitored = config.get("monitored_paths") or []
-        default_root = monitored[0] if monitored else "K:\\"
-
         label_local = self._t("ui_dialog_search_local_global", "本機全域")
 
         self.network_k_cb = QCheckBox(
-            self._t("ui_dialog_search_network_share",
-                    "網路共享 ({})").format(default_root))
+            self._t("ui_dialog_search_network_share", "網路共享"))
         self.network_k_cb.setChecked(True)
         self.network_k_cb.toggled.connect(self.start_search)
-        row2.addWidget(self.network_k_cb)
 
         self.local_global_cb = QCheckBox(label_local)
         self.local_global_cb.setChecked(True)
         self.local_global_cb.toggled.connect(self.on_scope_toggled)
-        row2.addWidget(self.local_global_cb)
 
-        row2.addWidget(self._vline())
+        # Container so both checkboxes + separator hide/show together
+        self._scope_row_widget = QWidget()
+        _sr = QHBoxLayout(self._scope_row_widget)
+        _sr.setContentsMargins(0, 0, 0, 0)
+        _sr.setSpacing(4)
+        _sr.addWidget(self.network_k_cb)
+        _sr.addWidget(self.local_global_cb)
+        _sr.addWidget(self._vline())
+        row2.addWidget(self._scope_row_widget)
 
         self.k_refresh_btn = QToolButton()
         self.k_refresh_btn.setText(self._t("ui_dialog_search_refresh", "🔄更新"))
@@ -257,13 +272,12 @@ class SearchPanel(QWidget):
         self.tree.clicked.connect(self.on_item_clicked)
         self.tree.doubleClicked.connect(self.on_item_double_clicked)
 
-        self.model = QStandardItemModel(0, 6)
+        self.model = QStandardItemModel(0, 5)
         self.model.setHorizontalHeaderLabels([
             "",
             self._t("ui_dialog_search_col_name", "名稱"),
             self._t("ui_dialog_search_col_date", "修改日期"),
             self._t("ui_dialog_search_col_size", "大小"),
-            self._t("ui_dialog_search_col_context", "找到位置"),
             self._t("ui_dialog_search_col_path", "完整路徑"),
         ])
 
@@ -274,17 +288,24 @@ class SearchPanel(QWidget):
 
         hdr = self.tree.header()
         hdr.setSectionsMovable(True)
-        for col in range(6):
+        for col in range(5):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
         self.tree.setColumnWidth(0, 42)
         self.tree.setColumnWidth(1, 300)
         self.tree.setColumnWidth(2, 150)
         self.tree.setColumnWidth(3, 80)
-        self.tree.setColumnWidth(4, 200)
-        self.tree.setColumnWidth(5, 400)
+        self.tree.setColumnWidth(4, 400)
 
         self.main_layout.addWidget(self.tree, 1)
         self.tree.selectionModel().selectionChanged.connect(self._on_selection_changed)
+        QShortcut(QKeySequence(Qt.Key.Key_Space), self.tree).activated.connect(
+            self._on_space_preview)
+
+        self._ql_delegate = QuickLookDelegate(self.config_mgr, self.tree)
+        self._ql_delegate.preview_requested.connect(self._on_preview_requested)
+        self.tree.setItemDelegateForColumn(1, self._ql_delegate)
+        self.tree.setMouseTracking(True)
+        self.tree.viewport().setMouseTracking(True)
 
         # ── Action bar (shown on selection) ───────────────────────────────────
         self.action_bar = QWidget()
@@ -322,6 +343,7 @@ class SearchPanel(QWidget):
         self.status_bar.addWidget(self.status_label)
         self.main_layout.addWidget(self.status_bar)
 
+        self._apply_role_visibility()
         self._update_role_status_ui()
 
     # ── Helpers ────────────────────────────────────────────────────────────────
@@ -478,7 +500,7 @@ class SearchPanel(QWidget):
 
         self.presenter.start_search(conditions)
 
-    def add_result(self, path: str, mtime=None, size=None, context: str = "") -> None:
+    def add_result(self, path: str, mtime=None, size=None, context: str = "") -> None:  # noqa: ARG002
         name = os.path.basename(path)
         dir_path = os.path.dirname(path)
 
@@ -502,16 +524,12 @@ class SearchPanel(QWidget):
         item_size = QStandardItem(size_str)
         item_size.setData(float(size) if size else 0.0, Qt.ItemDataRole.UserRole)
 
-        tc = self.config_mgr.get_theme_colors() if self.config_mgr else {}
-        item_context = QStandardItem(context)
-        item_context.setForeground(QColor(tc.get("accent", "#58A6FF")))
-
         item_path = QStandardItem(dir_path)
         item_path.setForeground(Qt.GlobalColor.gray)
         item_path.setData(dir_path, Qt.ItemDataRole.UserRole)
 
         self.model.appendRow(
-            [item_locate, item_name, item_date, item_size, item_context, item_path])
+            [item_locate, item_name, item_date, item_size, item_path])
 
     def search_finished(self, count: int) -> None:
         msg = self._t("ui_dialog_search_status_finished",
@@ -542,6 +560,8 @@ class SearchPanel(QWidget):
     def on_item_double_clicked(self, index) -> None:
         src = self.proxy_model.mapToSource(index)
         item = self.model.item(src.row(), 1)
+        if item is None:
+            return
         path = item.data(Qt.ItemDataRole.UserRole)
         if os.path.exists(path):
             os.startfile(path)
@@ -558,19 +578,23 @@ class SearchPanel(QWidget):
             return
         src = self.proxy_model.mapToSource(index)
         item = self.model.item(src.row(), 1)
+        if item is None:
+            return
         path = item.data(Qt.ItemDataRole.UserRole)
         selected = self._get_selected_paths()
         if path not in selected:
             selected = [path]
 
         menu = QMenu(self)
-        open_act = jump_act = copy_act = copy_to_act = move_to_act = copy_all_act = None
+        open_act = jump_act = copy_act = copy_to_act = move_to_act = copy_all_act = preview_act = None
 
         if len(selected) <= 1:
             open_act = menu.addAction(
                 self._t("ui_dialog_search_menu_open", "開啟檔案"))
             jump_act = menu.addAction(
                 self._t("ui_dialog_search_menu_locate", "在主視窗中定位"))
+            preview_act = menu.addAction("👁 預覽")
+            preview_act.setEnabled(os.path.isfile(path))
             menu.addSeparator()
             copy_act = menu.addAction(
                 self._t("ui_dialog_search_menu_copy_path", "複製路徑"))
@@ -587,6 +611,10 @@ class SearchPanel(QWidget):
         action = menu.exec(self.tree.viewport().mapToGlobal(pos))
         if action == open_act:
             os.startfile(path)
+        elif action == preview_act:
+            mw = self._find_main_window()
+            if mw and hasattr(mw, 'toggle_inline_preview'):
+                mw.toggle_inline_preview(path)
         elif action == jump_act:
             pane = self._get_explorer_pane()
             if pane and hasattr(pane, 'jump_to_file'):
@@ -720,33 +748,62 @@ class SearchPanel(QWidget):
 
     # ── Role / sync status ────────────────────────────────────────────────────
 
+    def _apply_role_visibility(self) -> None:
+        """Scope checkboxes are always visible; consumer defaults both to checked."""
+        self._scope_row_widget.setVisible(True)
+        if self.config_mgr and not self.config_mgr.is_admin_mode():
+            self.network_k_cb.setChecked(True)
+            self.local_global_cb.setChecked(True)
+
+    def reload_config(self) -> None:
+        """Called by MainWindow after admin saves settings."""
+        self.presenter.reload_config()
+        self._apply_role_visibility()
+        self._update_role_status_ui()
+
     def _update_role_status_ui(self) -> None:
         config = self.presenter.config_mgr.load_config()
         is_master = config.get("is_master_node", False)
-        remote_root = config.get("remote_index_root")
+        remote_root = config.get("remote_index_root", "")
+        nas_relative = config.get("nas_relative_path", "")
         tc = self.config_mgr.get_theme_colors() if self.config_mgr else {}
         _accent = tc.get("accent", "#58A6FF")
         _muted = tc.get("textMuted", "#8B949E")
         _success = tc.get("success", "#57B77F")
+        _danger = tc.get("danger", "#C9605A")
         tip_local = self._t("ui_dialog_search_refresh_tooltip_local",
                              "手動更新個人本機索引 (C:\\)")
 
         if is_master:
             self.sync_status_label.setText(self._t(
                 "ui_dialog_search_role_master",
-                "🛠️ 生產管理模式 (Master) - 掃描本機並發布至區域路徑"))
+                "🛠️ 生產管理模式"))
             self.sync_status_label.setStyleSheet(
                 f"color: {_accent}; font-weight: bold;")
-        elif not remote_root:
+        elif remote_root:
+            version_file = os.path.join(remote_root, "current_version.txt")
+            if os.path.exists(version_file):
+                self.sync_status_label.setText(self._t(
+                    "ui_dialog_search_role_consumer",
+                    "🌐 已偵測到共享索引"))
+                self.sync_status_label.setStyleSheet(f"color: {_success};")
+                self.sync_status_label.setToolTip(remote_root)
+            else:
+                self.sync_status_label.setText(self._t(
+                    "ui_dialog_search_role_nas_no_index",
+                    "⚠️ NAS 索引尚未建立，請聯絡管理員"))
+                self.sync_status_label.setStyleSheet(f"color: {_danger};")
+                self.sync_status_label.setToolTip(remote_root)
+        elif nas_relative:
+            # NAS relative path is configured but not yet found
+            self.sync_status_label.setText(
+                self._t("ui_dialog_search_role_nas_missing",
+                        "❌ 找不到 NAS 索引，請確認網路磁碟已掛載"))
+            self.sync_status_label.setStyleSheet(f"color: {_danger};")
+        else:
             self.sync_status_label.setText(
                 self._t("ui_dialog_search_role_local", "✅ 本機搜尋模式"))
             self.sync_status_label.setStyleSheet(f"color: {_muted};")
-        else:
-            slot = self.presenter.config_mgr.get_active_slot()
-            self.sync_status_label.setText(self._t(
-                "ui_dialog_search_role_consumer",
-                "🌐 消費者模式 (Slot {}): 已偵測到共享索引").format(slot))
-            self.sync_status_label.setStyleSheet(f"color: {_success};")
 
         self.k_refresh_btn.setEnabled(True)
         self.k_refresh_btn.setToolTip(tip_local)
@@ -754,7 +811,18 @@ class SearchPanel(QWidget):
     def _run_background_sync(self) -> None:
         config = self.presenter.config_mgr.load_config()
         is_master = config.get("is_master_node", False)
-        remote_root = config.get("remote_index_root")
+        remote_root = config.get("remote_index_root", "")
+        nas_relative = config.get("nas_relative_path", "")
+
+        # Consumer with no cached NAS path — start async discovery
+        if not is_master and not remote_root and nas_relative:
+            self.sync_status_label.setText(
+                self._t("ui_dialog_search_status_discovering", "🔍 正在搜尋 NAS 索引..."))
+            self._discovery_worker = _NasDiscoveryWorker(nas_relative, self)
+            self._discovery_worker.found.connect(self._on_nas_discovered)
+            self._discovery_worker.not_found.connect(self._on_nas_not_found)
+            self._discovery_worker.start()
+            return
 
         if not remote_root:
             self.sync_status_label.setText(
@@ -770,6 +838,16 @@ class SearchPanel(QWidget):
         self.sync_status_label.setText(self._t(
             "ui_dialog_search_status_connected",
             "✅ 已連接至團隊共享索引 (直接連線模式)"))
+        self._update_role_status_ui()
+
+    def _on_nas_discovered(self, path: str) -> None:
+        """NAS index found — save path, reinitialize presenter, update UI."""
+        self.presenter.config_mgr.save_config(remote_index_root=path)
+        self.presenter.reload_config()
+        self._update_role_status_ui()
+
+    def _on_nas_not_found(self) -> None:
+        """NAS discovery finished with no result — show error."""
         self._update_role_status_ui()
 
     # ── Duplicate analysis ────────────────────────────────────────────────────
@@ -812,6 +890,53 @@ class SearchPanel(QWidget):
             return
         self.action_count_label.setText(f"已選取 {count} 個項目")
         self.action_bar.show()
+        if count == 1:
+            paths = self._get_selected_paths()
+            if paths and os.path.isfile(paths[0]):
+                self._update_preview_if_open(paths[0])
+
+    def _update_preview_if_open(self, path: str) -> None:
+        """If inline preview is already open, silently update its content."""
+        mw = self._find_main_window()
+        if not mw:
+            return
+        target = getattr(mw, '_preview_target_pane', None)
+        if target is None:
+            return
+        panels = getattr(mw, '_preview_panels', {})
+        if target in panels:
+            panels[target].preview_file(path)
+
+    def _on_space_preview(self) -> None:
+        """Space key: toggle inline preview for the single selected file."""
+        paths = self._get_selected_paths()
+        if len(paths) != 1 or not os.path.isfile(paths[0]):
+            return
+        self._on_preview_requested(paths[0])
+
+    def _on_preview_requested(self, path: str) -> None:
+        """Eye-icon click or Space key: smart preview — update in place when possible."""
+        mw = self._find_main_window()
+        if not mw:
+            return
+        target = getattr(mw, '_preview_target_pane', None)
+        if target is not None:
+            if self._ql_delegate.active_preview_path == path:
+                # Same file — close preview
+                mw.toggle_inline_preview(path)
+                self._ql_delegate.active_preview_path = ""
+            else:
+                # Different file — update content without WebEngine teardown
+                panels = getattr(mw, '_preview_panels', {})
+                if target in panels:
+                    panels[target].preview_file(path)
+                self._ql_delegate.active_preview_path = path
+        else:
+            # No preview open — open it
+            if hasattr(mw, 'toggle_inline_preview'):
+                mw.toggle_inline_preview(path)
+            self._ql_delegate.active_preview_path = path
+        self.tree.viewport().update()
 
     def _copy_to_pane(self) -> None:
         self._do_copy_or_move(move=False)

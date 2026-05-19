@@ -33,11 +33,14 @@ class AppSettingsDialog(QDialog):
         tabs = QTabWidget()
         root.addWidget(tabs)
 
-        for builder, label in [
+        is_admin = self.config_mgr.is_admin_mode() if self.config_mgr else False
+        tab_defs = [
             (self._tab_appearance, "🎨 外觀"),
-            (self._tab_index,      "🔍 索引"),
             (self._tab_behavior,   "⚙️ 行為"),
-        ]:
+        ]
+        if is_admin:
+            tab_defs.insert(1, (self._tab_index, "🔍 索引"))
+        for builder, label in tab_defs:
             tabs.addTab(builder(s), label)
 
         btn_row = QHBoxLayout()

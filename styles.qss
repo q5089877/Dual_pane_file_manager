@@ -100,6 +100,16 @@ ExplorerPane#activePane {
     border-radius: 8px;
 }
 
+SearchPanel#inactivePane {
+    border: 2px solid {{border}};
+    border-radius: 8px;
+}
+
+SearchPanel#activePane {
+    border: 2px solid {{activeBorder}};
+    border-radius: 8px;
+}
+
 QTabBar::tab:selected {
     background-color: {{panelBg}};
     color: {{accent}};
