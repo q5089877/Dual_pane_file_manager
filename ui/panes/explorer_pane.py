@@ -660,7 +660,7 @@ class ExplorerPane(QWidget):
         self.quality_toggle_btn = QToolButton()
         self.quality_toggle_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.quality_toggle_btn.setObjectName("qualityToggleBtn")
-        self.quality_toggle_btn.setToolTip("切換 PDF 預覽畫質 (SD / HD)")
+        self.quality_toggle_btn.setToolTip("SD：快速預覽前 N 頁　HD：高畫質顯示全部頁數")
         self.quality_toggle_btn.setVisible(False)
         self.quality_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.update_quality_btn("SD") # 初始化
@@ -941,7 +941,7 @@ class ExplorerPane(QWidget):
     @pyqtSlot(str)
     def update_quality_btn(self, quality: str) -> None:
         if quality == "HD":
-            self.quality_toggle_btn.setText(" 高畫質 (HD)")
+            self.quality_toggle_btn.setText(" HD 全頁數查看")
         else:
             self.quality_toggle_btn.setText(" 流暢 (SD)")
         

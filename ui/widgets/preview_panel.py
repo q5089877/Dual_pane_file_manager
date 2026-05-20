@@ -649,7 +649,7 @@ class PreviewPanel(QWidget):
         if ext not in {".pdf", ".ai"}:
             self._show_loading()
         _cfg = self.config_mgr.load_config() if self.config_mgr else {}
-        _pdf_max = _cfg.get("pdf_preview_max_pages", 3)
+        _pdf_max = 9999 if self._dpi_scale >= 2.0 else _cfg.get("pdf_preview_max_pages", 3)
         _font_size = _cfg.get("preview_font_size", 14)
         self._current_worker = PreviewThread(
             self._pending_path, pdf_max_pages=_pdf_max, font_size=_font_size, pdf_dpi=self._dpi_scale, parent=self)
