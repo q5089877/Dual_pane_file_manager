@@ -411,11 +411,14 @@ def render_pdf(path: str, max_pages: int = 3, dpi_scale: float = 1.2) -> str:
             '<text x="12" y="17" fill="white" font-size="7" font-family="Arial, sans-serif" font-weight="900" text-anchor="middle">PDF</text>'
             '</svg>'
         )
-        pages_ctrl = (
-            f'<a class="page-adj" href="app://pages-dec">‹</a>'
-            f'<span class="page-count">{max_pages} 頁</span>'
-            f'<a class="page-adj" href="app://pages-inc">›</a>'
-        )
+        if limit >= total_pages:
+            pages_ctrl = f'<span class="page-count">全部 {total_pages} 頁</span>'
+        else:
+            pages_ctrl = (
+                f'<a class="page-adj" href="app://pages-dec">‹</a>'
+                f'<span class="page-count">{limit} 頁</span>'
+                f'<a class="page-adj" href="app://pages-inc">›</a>'
+            )
         open_btn = f'<a class="open-btn" href="app://open" style="display:inline-flex;align-items:center;">{pdf_icon_svg}開啟</a>'
         html_parts.append(f'<div style="width:100%; height:0; overflow:visible; position:relative; z-index:1000;"><div class="pdf-info-badge"><span>{info_line}</span>{pages_ctrl}{open_btn}</div></div>')
 

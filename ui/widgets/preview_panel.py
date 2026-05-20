@@ -370,7 +370,7 @@ class PreviewPanel(QWidget):
         )
 
     def _adjust_pdf_pages(self, delta: int) -> None:
-        if not self.config_mgr:
+        if not self.config_mgr or self._dpi_scale >= 2.0:
             return
         cfg = self.config_mgr.load_config()
         current = cfg.get("pdf_preview_max_pages", 3)
