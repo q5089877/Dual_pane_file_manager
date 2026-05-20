@@ -376,6 +376,8 @@ class MainWindow(
                   self).activated.connect(self.on_advanced_search_clicked)
         QShortcut(QKeySequence("Ctrl+Z"),
                   self).activated.connect(self.undo_last)
+        QShortcut(QKeySequence("Ctrl+Shift+P"),
+                  self).activated.connect(self._open_command_palette)
 
         # 隱藏管理者後門 — 不顯示於任何選單或工具列
         _admin_sc = QShortcut(QKeySequence("Ctrl+Shift+Alt+A"), self)
@@ -1046,4 +1048,85 @@ class MainWindow(
                            "在新視窗開啟")).triggered.connect(lambda: self.open_new_window(path))
 
         menu.exec(tw.tabBar().mapToGlobal(pos))
+
+    # ── Command Palette ───────────────────────────────────────────────────────
+
+    def _build_commands(self) -> list:
+        from ui.widgets.command_palette import Command
+        _ = self.config_mgr.get_text
+
+        def _pane(fn: str, **kw):
+            def _act():
+                p = self.active_pane
+                if p and not getattr(p, '_is_search_tab', False) and hasattr(p, fn):
+                    getattr(p, fn)(**kw)
+            return _act
+
+        def _win(fn: str):
+            return lambda: getattr(self, fn)()
+
+        def _new_tab():
+            tabs = self.left_tabs if self._active_side == "left" else self.right_tabs
+            self.add_new_tab(tabs)
+
+        def _close_tab():
+            tabs = self.left_tabs if self._active_side == "left" else self.right_tabs
+            if tabs.count() > 1:
+                self.close_tab(tabs, tabs.currentIndex())
+
+        def _copy_path():
+            p = self.active_pane
+            if not p or not hasattr(p, '_get_selected_paths'):
+                return
+            paths = p._get_selected_paths()
+            if paths:
+                from PyQt6.QtWidgets import QApplication
+                QApplication.clipboard().setText(paths[0])
+                self.show_toast(_("ui_pal_copied", "路徑已複製"), "success")
+
+        def _toggle_prev():
+            p = self.active_pane
+            if not p:
+                return
+            if self._preview_target_pane:
+                self.close_inline_preview()
+                return
+            paths = p._get_selected_paths() if hasattr(p, '_get_selected_paths') else []
+            if paths and os.path.isfile(paths[0]):
+                self.toggle_inline_preview(paths[0])
+
+        def _toggle_pin():
+            p = self.active_pane
+            if not p or not hasattr(p, '_get_selected_paths'):
+                return
+            paths = p._get_selected_paths()
+            if paths:
+                self.toggle_pin(paths[0])
+
+        N, F, S, T = "導覽", "檔案", "搜尋", "工具"
+        return [
+            Command(_("ui_pal_back",      "上一頁"),       _win("on_alt_left"),                       "Alt+←",     N, ["back"]),
+            Command(_("ui_pal_fwd",       "下一頁"),       _win("on_alt_right"),                      "Alt+→",     N, ["fwd"]),
+            Command(_("ui_pal_up",        "上一層"),       _pane("go_up"),                            "Backspace", N, ["up", "parent"]),
+            Command(_("ui_pal_refresh",   "重整"),         _pane("refresh"),                          "F5",        N, ["reload"]),
+            Command(_("ui_pal_home",      "首頁"),         _pane("set_path", path="home://"),         "",          N, ["home"]),
+            Command(_("ui_pal_new_tab",   "新增分頁"),     _new_tab,                                  "",          N, ["new tab"]),
+            Command(_("ui_pal_close_tab", "關閉分頁"),     _close_tab,                                "",          N, ["close tab"]),
+            Command(_("ui_pal_switch",    "切換側欄"),     _win("switch_side_focus"),                 "`",         N, ["switch pane"]),
+            Command(_("ui_pal_mkdir",     "新增資料夾"),   _pane("create_new_folder"),                "F7",        F, ["mkdir", "folder"]),
+            Command(_("ui_pal_del",       "刪除到回收桶"), _pane("delete_selected"),                  "Del",       F, ["trash"]),
+            Command(_("ui_pal_perm_del",  "永久刪除"),     _pane("delete_selected", permanent=True),  "Shift+Del", F, ["permanent"]),
+            Command(_("ui_pal_copy_opp",  "複製到對側"),   _win("copy_selected_to_other_side"),       "F4",        F, ["copy"]),
+            Command(_("ui_pal_move_opp",  "移動到對側"),   _win("move_selected_to_other_side"),       "F3",        F, ["move"]),
+            Command(_("ui_pal_undo",      "復原"),         _win("undo_last"),                         "Ctrl+Z",    F, ["undo"]),
+            Command(_("ui_pal_copy_path", "複製路徑"),     _copy_path,                                "",          F, ["path", "clipboard"]),
+            Command(_("ui_pal_search",    "進階搜尋"),     _win("on_advanced_search_clicked"),        "Ctrl+F",    S, ["search", "find"]),
+            Command(_("ui_pal_preview",   "切換預覽"),     _toggle_prev,                              "Space",     T, ["preview"]),
+            Command(_("ui_pal_settings",  "開啟設定"),     _win("on_settings_clicked"),               "",          T, ["settings", "prefs"]),
+            Command(_("ui_pal_pin",       "釘選 / 取消"),  _toggle_pin,                               "Ctrl+D",    T, ["pin", "bookmark"]),
+        ]
+
+    def _open_command_palette(self) -> None:
+        from ui.widgets.command_palette import CommandPaletteDialog
+        CommandPaletteDialog(self._build_commands(), self).open_at(self)
 
