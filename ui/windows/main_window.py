@@ -514,7 +514,7 @@ class MainWindow(
                 "ui_main_toast_tab_limit", "最多 5 個分頁"), "warning")
             return
         from ui.widgets.search_panel import SearchPanel
-        panel = SearchPanel(source_pane.model.rootPath(), self.config_mgr, self)
+        panel = SearchPanel(source_pane._current_path or source_pane.model.rootPath(), self.config_mgr, self)
         idx = tw.addTab(panel, "🔍 搜尋")
         tw.setCurrentIndex(idx)
         panel.close_requested.connect(lambda: self._close_search_tab(tw, panel))
@@ -749,7 +749,7 @@ class MainWindow(
                             f"SearchPanel {{ border: 2px solid {border};"
                             f" border-radius: 8px; }}")
                 else:
-                    active = (p == self.active_pane)
+                    active = (p == self.active_pane) and is_active_side
                     p.setObjectName("activePane" if active else "inactivePane")
                     p.tree.setObjectName("active" if active else "")
                     p.list_view.setObjectName("active" if active else "")
@@ -937,9 +937,6 @@ class MainWindow(
         target_pane = self._preview_target_pane
         if not source_pane or not target_pane:
             return
-
-        is_left = any(self.left_tabs.widget(i) ==
-                      source_pane for i in range(self.left_tabs.count()))
 
         # [究極 UX 優化]：處理幽靈預覽 (Ghost Preview)
         # 在刪除或提取前，強迫游標跳到下一筆，讓預覽視窗自動更新而不會白屏

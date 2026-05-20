@@ -12,7 +12,7 @@
   "paste_prefix_text": "文字筆記",
   "ui_dialog_search_title": "進階搜尋",
   "ui_dialog_search_placeholder": "輸入關鍵字搜尋 (例如: .pdf 或 文件名)...",
-  "ui_dialog_search_network_share": "網路共享 ({})",
+  "ui_dialog_search_network_share": "網路共享",
   "ui_dialog_search_local_global": "本機全域",
   "ui_dialog_search_settings": "⚙設定",
   "ui_dialog_search_settings_tooltip": "網路索引管理與角色設定",

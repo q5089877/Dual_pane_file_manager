@@ -12,14 +12,6 @@ import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
-try:
-    import ezdxf
-    from ezdxf.addons.drawing import Frontend, RenderContext, layout as _dxf_layout, svg as ezdxf_svg
-    _HAS_EZDXF = True
-except Exception as _e:
-    logger.warning("ezdxf not available: %s", _e)
-    _HAS_EZDXF = False
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -141,8 +133,6 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp",
 
 PDF_EXTS = {".pdf", ".ai"}
 
-STL_EXTS = {".stl", ".obj", ".ply"}
-SLD_EXTS = {".sldprt", ".slddrw"}
 
 ARCHIVE_EXTS = {".zip", ".7z"}
 
@@ -596,110 +586,6 @@ def render_archive(path: str, max_items: int = 200) -> str:
         return _base_html(f'<div class="err">無法預覽壓縮檔: {_html_escape(str(e))}</div>')
 
 
-def render_stl(path: str) -> str:
-    """Render STL/OBJ/PLY with trimesh metadata (no PyVista thumbnail)."""
-    # ── Phase A: trimesh metadata ─────────────────────────────────────────────
-    meta_html = ""
-    try:
-        import trimesh
-        mesh = trimesh.load(path, force="mesh")
-        n_faces = len(mesh.faces) if hasattr(mesh, "faces") else 0
-        n_verts = len(mesh.vertices) if hasattr(mesh, "vertices") else 0
-        is_closed = mesh.is_watertight if hasattr(
-            mesh, "is_watertight") else False
-        bb = mesh.bounding_box.extents
-        vol = abs(float(mesh.volume))
-        meta_html = f"""<div class="badge-row">
-  <div class="badge">
-    <span class="bk">長 (X)</span>
-    <span class="bv">{bb[0]:.3f}</span>
-    <span class="bu">mm</span>
-  </div>
-  <div class="badge">
-    <span class="bk">寬 (Y)</span>
-    <span class="bv">{bb[1]:.3f}</span>
-    <span class="bu">mm</span>
-  </div>
-  <div class="badge">
-    <span class="bk">高 (Z)</span>
-    <span class="bv">{bb[2]:.3f}</span>
-    <span class="bu">mm</span>
-  </div>
-  <div class="badge">
-    <span class="bk">體積</span>
-    <span class="bv">{vol:.2f}</span>
-    <span class="bu">mm³</span>
-  </div>
-</div>
-<div class="info-card">
-  <div class="label">面數</div><div class="value">{n_faces:,}</div>
-  <hr>
-  <div class="label">頂點數</div><div class="value">{n_verts:,}</div>
-  <hr>
-  <div class="label">封閉實體</div><div class="value">{'是' if is_closed else '否'}</div>
-</div>"""
-    except ImportError:
-        meta_html = '<div class="err">需要 trimesh 套件 (<code>pip install trimesh</code>)</div>'
-    except Exception as e:
-        meta_html = f'<div class="err">無法解析幾何資料: {_html_escape(str(e))}</div>'
-
-    # ── Phase C: assemble ─────────────────────────────────────────────────────
-    return _base_html(meta_html)
-
-
-# ── SolidWorks OLE thumbnail renderer ─────────────────────────────────────────
-
-def render_sldprt(path: str) -> str:
-    """Extract embedded preview thumbnail from SolidWorks OLE container."""
-    import base64
-    name = os.path.basename(path)
-    try:
-        import olefile
-    except ImportError:
-        return _base_html(
-            '<div class="err">需要 olefile 套件 (<code>pip install olefile</code>)</div>')
-
-    STREAM_CANDIDATES = ["PreviewPNG", "PICTURE", "\x05SummaryInformation"]
-    img_b64 = None
-    img_mime = "image/png"
-    try:
-        if not olefile.isOleFile(path):
-            return _base_html(f'<div class="err">{_html_escape(name)}：非有效 OLE 檔案</div>')
-        with olefile.OleFileIO(path) as ole:
-            for stream in STREAM_CANDIDATES:
-                if ole.exists(stream):
-                    data = ole.openstream(stream).read()
-                    for sig, mime in [(b"\x89PNG", "image/png"), (b"\xff\xd8\xff", "image/jpeg"),
-                                      (b"BM", "image/bmp")]:
-                        idx = data.find(sig)
-                        if idx != -1:
-                            img_b64 = base64.b64encode(data[idx:]).decode()
-                            img_mime = mime
-                            break
-                if img_b64:
-                    break
-    except Exception as e:
-        return _base_html(f'<div class="err">讀取失敗：{_html_escape(str(e))}</div>')
-
-    if img_b64:
-        body = f"""<div style="text-align:center; padding:12px 0;">
-  <img src="data:{img_mime};base64,{img_b64}"
-       style="max-width:100%; max-height:460px; border-radius:6px;
-              box-shadow:0 4px 20px rgba(0,0,0,0.4);" />
-</div>
-<div class="info-card" style="margin-top:12px;">
-  <div class="label">檔案</div><div class="value">{_html_escape(name)}</div>
-</div>"""
-    else:
-        body = f"""<div class="info-card">
-  <div style="font-size:36px; text-align:center; margin-bottom:12px;">⚙️</div>
-  <div class="label">檔案</div><div class="value">{_html_escape(name)}</div>
-  <hr>
-  <div class="label" style="color:#888;">此版本未包含嵌入縮圖，請以系統程式開啟。</div>
-</div>"""
-    return _base_html(body)
-
-
 # ── Audio metadata renderer ───────────────────────────────────────────────────
 
 def render_audio(path: str) -> str:
@@ -857,38 +743,6 @@ def render_markdown(path: str) -> str:
         return render_text(path)
 
 
-# ── DXF renderer ──────────────────────────────────────────────────────────────
-
-def render_dxf(path: str) -> str:
-    if not _HAS_EZDXF:
-        return _base_html(
-            '<div class="info-card">'
-            '<span class="label">⚠️ 尚未安裝 ezdxf 模組</span>'
-            '<span class="value">請執行：<code>pip install ezdxf</code> 以啟用 DXF 預覽</span>'
-            '</div>'
-        )
-    try:
-        doc = ezdxf.readfile(path)
-        msp = doc.modelspace()
-        backend = ezdxf_svg.SVGBackend()
-        Frontend(RenderContext(doc), backend).draw_layout(msp)
-        svg_str = backend.get_string(_dxf_layout.Page(0, 0))
-        return (
-            '<!DOCTYPE html><html><head><meta charset="utf-8">'
-            '<style>'
-            'body{background:#1e1e2e;margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;}'
-            '.c{background:white;padding:10px;border-radius:4px;width:95vw;height:95vh;'
-            'display:flex;justify-content:center;align-items:center;box-sizing:border-box;}'
-            'svg{max-width:100%;max-height:100%;object-fit:contain;}'
-            '</style></head>'
-            f'<body><div class="c">{svg_str}</div></body></html>'
-        )
-    except ezdxf.DXFStructureError:
-        return _base_html('<div class="info-card"><span class="label" style="color:#ff5555">❌ DXF 解析失敗：檔案結構損毀或格式不支援</span></div>')
-    except Exception as e:
-        logger.warning("render_dxf failed: %s", e)
-        return render_unknown(path)
-
 
 # ── main dispatcher ────────────────────────────────────────────────────────────
 
@@ -921,12 +775,6 @@ def generate_preview(path: str, pdf_max_pages: int = 3, font_size: int = 13, pdf
         html = render_pdf(path, max_pages=pdf_max_pages, dpi_scale=pdf_dpi)
     elif ext in ARCHIVE_EXTS:
         html = render_archive(path)
-    elif ext in STL_EXTS:
-        html = render_stl(path)
-    elif ext in SLD_EXTS:
-        html = render_sldprt(path)
-    elif ext == ".dxf":
-        html = render_dxf(path)
     elif ext in {".xlsx", ".xls"}:
         html = render_table_xlsx(path)
     elif ext == ".docx":

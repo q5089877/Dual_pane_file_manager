@@ -6,7 +6,7 @@ from core.interfaces import ISearchView
 from core.config_manager import ConfigManager
 
 class _SQLiteSearchWorker(QThread):
-    result_ready = pyqtSignal(str, float, float, str)  # path, mtime, size, context
+    result_ready = pyqtSignal(str, float, float)  # path, mtime, size
     progress = pyqtSignal(str)
     finished = pyqtSignal(int)
 
@@ -67,7 +67,7 @@ class _SQLiteSearchWorker(QThread):
 
             if max_size > 0 and size > max_size: continue
 
-            self.result_ready.emit(path, float(mtime or 0), float(size or 0), "")
+            self.result_ready.emit(path, float(mtime or 0), float(size or 0))
             count += 1
 
         self.finished.emit(count)
@@ -102,38 +102,28 @@ class SearchPresenter:
     def start_search(self, conditions: dict):
         self.stop_search()
 
-        has_content_search = bool(conditions.get('content'))
         use_global = conditions.get('use_global', False)
         use_k = conditions.get('use_k', False)
 
         config = self.config_mgr.load_config()
 
-        if not has_content_search and (use_global or use_k):
+        if use_global or use_k:
             self.active_worker = _SQLiteSearchWorker(self.index_mgr, conditions, config=config)
             self.active_worker.result_ready.connect(self.view.add_result)
             self.active_worker.progress.connect(self.view.show_progress)
             self.active_worker.finished.connect(self.view.search_finished)
             self.active_worker.start()
         else:
-            if use_global:
-                search_root = "C:\\"
-            elif use_k:
-                monitored = config.get('monitored_paths') or []
-                search_root = monitored[0] if monitored else conditions['path']
-            else:
-                search_root = conditions['path']
+            search_root = conditions['path']
             self.active_worker = SearchThread(
                 search_root,
                 conditions['pattern'],
-                conditions.get('content', ''),
                 conditions.get('date_from', QDate(1900, 1, 1)),
                 conditions.get('date_to', QDate.currentDate()),
                 conditions.get('min_size', 0),
                 conditions.get('max_size', 0)
             )
-            self.active_worker.match_found.connect(
-                lambda path, mtime, size, ctx: self.view.add_result(path, mtime, size, ctx)
-            )
+            self.active_worker.match_found.connect(self.view.add_result)
             self.active_worker.progress.connect(self.view.show_progress)
             self.active_worker.finished_signal.connect(self.view.search_finished)
             self.active_worker.start()

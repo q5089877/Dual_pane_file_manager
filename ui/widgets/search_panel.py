@@ -51,10 +51,11 @@ class SearchPanel(QWidget):
 
         class _Adapter(ISearchView):
             def __init__(self, p): self.p = p
-            def add_result(self, path, mtime, size, context=""): self.p.add_result(path, mtime, size, context)
+            def add_result(self, path, mtime, size): self.p.add_result(path, mtime, size)
             def show_progress(self, text): self.p.status_label.setText(text)
             def search_finished(self, count): self.p.search_finished(count)
 
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._is_search_tab = True  # tab system skips _current_path lookup for this widget
         self.presenter = SearchPresenter(_Adapter(self), self.config_mgr)
         self.active_workers: list = []
@@ -117,7 +118,7 @@ class SearchPanel(QWidget):
         self.network_k_cb = QCheckBox(
             self._t("ui_dialog_search_network_share", "網路共享"))
         self.network_k_cb.setChecked(True)
-        self.network_k_cb.toggled.connect(self.start_search)
+        self.network_k_cb.toggled.connect(self._on_network_toggled)
 
         self.local_global_cb = QCheckBox(label_local)
         self.local_global_cb.setChecked(True)
@@ -180,76 +181,11 @@ class SearchPanel(QWidget):
 
         row2.addStretch()
 
-        self._adv_toggle_btn = QToolButton()
-        self._adv_toggle_btn.setText("進階 ▾")
-        self._adv_toggle_btn.setCheckable(True)
-        self._adv_toggle_btn.setFixedWidth(66)
-        self._adv_toggle_btn.toggled.connect(self._on_adv_toggled)
-        row2.addWidget(self._adv_toggle_btn)
-
         self.main_layout.addLayout(row2)
 
         # Pill-button compatibility shims (no actual widgets created)
         self.size_btns: list = []
         self.time_btns: list = []
-
-        # ── Row 3 (collapsible): content search ───────────────────────────────
-        self._content_row_widget = QWidget()
-        cr = QHBoxLayout(self._content_row_widget)
-        cr.setContentsMargins(0, 0, 0, 0)
-        cr.setSpacing(4)
-        cr.addWidget(QLabel(self._t("ui_dialog_search_content_label", "內容:")))
-
-        self.content_input = QLineEdit()
-        self.content_input.setPlaceholderText(self._t(
-            "ui_dialog_search_content_placeholder",
-            "搜尋檔案內容（支援 txt/pdf/docx/xlsx）..."))
-        self.content_input.textChanged.connect(self._on_content_changed)
-        self.content_input.returnPressed.connect(self.start_search)
-        cr.addWidget(self.content_input, 1)
-
-        self.content_scope_cb = QComboBox()
-        self.content_scope_cb.addItems([
-            self._t("ui_dialog_search_scope_current", "當前目錄"),
-            label_local,
-        ])
-        self.content_scope_cb.setFixedWidth(100)
-        self.content_scope_cb.currentIndexChanged.connect(
-            lambda _: self._on_content_changed(self.content_input.text()))
-        cr.addWidget(self.content_scope_cb)
-
-        self.content_search_btn = QPushButton(
-            self._t("ui_dialog_search_btn_search", "搜尋"))
-        self.content_search_btn.setObjectName("contentSearchBtn")
-        self.content_search_btn.setFixedWidth(60)
-        self.content_search_btn.clicked.connect(self.start_search)
-        cr.addWidget(self.content_search_btn)
-
-        warn_color = "#e67e22"
-        if self.config_mgr:
-            warn_color = self.config_mgr.get_theme_colors().get("folder", warn_color)
-        self.content_warn_label = QLabel(
-            self._t("ui_dialog_search_warn_network", "⚠ 不支援網路磁碟"))
-        self.content_warn_label.setStyleSheet(
-            f"color: {warn_color}; font-size: 11px; padding-left: 6px;")
-        self.content_warn_label.hide()
-        cr.addWidget(self.content_warn_label)
-        cr.addStretch()
-
-        self._content_row_widget.setVisible(False)
-        self.main_layout.addWidget(self._content_row_widget)
-
-        # Current-dir hint (shown during content search in current-dir mode)
-        muted = "#888"
-        if self.config_mgr:
-            muted = self.config_mgr.get_theme_colors().get("textMuted", muted)
-        self.path_display_label = QLabel(
-            self._t("ui_dialog_search_current_dir",
-                    "📁 當前目錄: {}").format(self.root_path))
-        self.path_display_label.setStyleSheet(
-            f"color: {muted}; font-size: 13px; padding-left: 4px;")
-        self.path_display_label.hide()
-        self.main_layout.addWidget(self.path_display_label)
 
         # Thin progress bar for scan progress
         self.scan_progress_bar = QProgressBar()
@@ -362,13 +298,16 @@ class SearchPanel(QWidget):
 
     def set_root(self, path: str) -> None:
         self.root_path = path
-        self.path_display_label.setText(
-            self._t("ui_dialog_search_current_dir",
-                    "📁 當前目錄: {}").format(path))
 
     def focus_search(self) -> None:
         self.search_input.setFocus()
         self.search_input.selectAll()
+
+    def enterEvent(self, event) -> None:
+        super().enterEvent(event)
+        mw = self.window()
+        if hasattr(mw, 'set_active_pane'):
+            mw.set_active_pane(self)
 
     def cleanup(self) -> None:
         self.presenter.stop_search()
@@ -386,12 +325,6 @@ class SearchPanel(QWidget):
     def closeEvent(self, event):
         self.close_requested.emit()
         event.ignore()
-
-    # ── Slot: advanced row toggle ──────────────────────────────────────────────
-
-    def _on_adv_toggled(self, checked: bool) -> None:
-        self._content_row_widget.setVisible(checked)
-        self._adv_toggle_btn.setText("進階 ▲" if checked else "進階 ▾")
 
     # ── Slots: combo-based filter ──────────────────────────────────────────────
 
@@ -415,36 +348,26 @@ class SearchPanel(QWidget):
     def on_time_btn_clicked(self, index: int) -> None:
         self.time_combo.setCurrentIndex(index)
 
-    # ── Search logic (ported from SearchDialog) ────────────────────────────────
-
-    def _on_content_changed(self, text: str) -> None:
-        has_text = bool(text)
-        self.content_warn_label.setVisible(has_text)
-        is_cur_dir = self.content_scope_cb.currentIndex() == 0
-        self.path_display_label.setVisible(has_text and is_cur_dir)
-        if text:
-            self.network_k_cb.setChecked(False)
+    # ── Search logic ──────────────────────────────────────────────────────────
 
     def on_search_text_changed(self, _text: str) -> None:
         self.search_timer.start(300)
 
-    def on_scope_toggled(self, _checked: bool) -> None:
+    def _on_network_toggled(self, checked: bool) -> None:
+        if not checked and not self.local_global_cb.isChecked():
+            self.network_k_cb.setChecked(True)
+            return
+        self.start_search()
+
+    def on_scope_toggled(self, checked: bool) -> None:
+        if not checked and not self.network_k_cb.isChecked():
+            self.local_global_cb.setChecked(True)
+            return
         self.start_search()
 
     def start_search(self) -> None:
         keyword = self.search_input.text().strip()
-        content_keyword = self.content_input.text().strip()
-        if content_keyword:
-            import unicodedata
-            dw = sum(
-                2 if unicodedata.east_asian_width(c) in ('W', 'F') else 1
-                for c in content_keyword)
-            if dw < 2:
-                self.status_label.setText(self._t(
-                    "ui_dialog_search_warn_content_len",
-                    "⚠ 內容關鍵字至少需輸入 2 個字元（或 1 個中文字）"))
-                return
-        if not keyword and not content_keyword and not self.network_k_cb.isChecked():
+        if not keyword and not self.network_k_cb.isChecked():
             self.status_label.setText(
                 self._t("ui_dialog_search_warn_no_keyword", "請輸入關鍵字"))
             return
@@ -476,16 +399,11 @@ class SearchPanel(QWidget):
         min_size_val = size_map.get(str(self.current_size_idx),
                                     size_map.get(self.current_size_idx, 0))
 
-        use_global_val = self.local_global_cb.isChecked()
-        if content_keyword:
-            use_global_val = (self.content_scope_cb.currentIndex() == 1)
-
         conditions = {
             'path': self.root_path,
             'pattern': (keyword if ('*' in keyword or '?' in keyword)
                         else (f"*{keyword}*" if keyword else "*")),
-            'content': content_keyword,
-            'use_global': use_global_val,
+            'use_global': self.local_global_cb.isChecked(),
             'use_k': self.network_k_cb.isChecked(),
             'min_size': min_size_val,
             'min_mtime': min_mtime,
@@ -500,7 +418,7 @@ class SearchPanel(QWidget):
 
         self.presenter.start_search(conditions)
 
-    def add_result(self, path: str, mtime=None, size=None, context: str = "") -> None:  # noqa: ARG002
+    def add_result(self, path: str, mtime=None, size=None) -> None:
         name = os.path.basename(path)
         dir_path = os.path.dirname(path)
 

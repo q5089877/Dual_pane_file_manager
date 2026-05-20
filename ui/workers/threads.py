@@ -289,81 +289,16 @@ class FileOperationThread(QThread):
 
         self.finished_signal.emit(True, "操作完成")
 
-def _find_context(path: str, keyword: str) -> str:
-    """找出關鍵字在檔案中的第一個位置，返回簡短描述字串。"""
-    ext = os.path.splitext(path)[1].lower()
-    kw = keyword.lower()
-    try:
-        if ext == ".pdf":
-            import fitz
-            with fitz.open(path) as doc:
-                for i, page in enumerate(doc, 1):
-                    if kw in page.get_text().lower():
-                        return f"第{i}頁"
-        elif ext == ".docx":
-            import docx as _docx
-            doc = _docx.Document(path)
-            for i, p in enumerate(doc.paragraphs, 1):
-                if kw in p.text.lower():
-                    return f"第{i}段"
-        elif ext in (".xlsx", ".xls"):
-            import openpyxl
-            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-            for ws in wb.worksheets:
-                for row in ws.iter_rows():
-                    for cell in row:
-                        if cell.value and kw in str(cell.value).lower():
-                            return f"{ws.title}!{cell.coordinate}"
-        else:
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                for i, line in enumerate(f, 1):
-                    if kw in line.lower():
-                        snippet = line.strip()[:40]
-                        return f"第{i}行: {snippet}"
-    except Exception:
-        pass
-    return ""
-
-
-def _extract_text(path: str) -> str:
-    """從檔案提取純文字（小寫），供內容搜尋比對。
-    支援 pdf / docx / xlsx / 純文字，其餘返回空字串。"""
-    ext = os.path.splitext(path)[1].lower()
-    try:
-        if ext == ".pdf":
-            import fitz
-            with fitz.open(path) as doc:
-                return "".join(page.get_text() for page in doc).lower()
-        if ext == ".docx":
-            import docx as _docx
-            doc = _docx.Document(path)
-            return "\n".join(p.text for p in doc.paragraphs).lower()
-        if ext in (".xlsx", ".xls"):
-            import openpyxl
-            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-            parts = []
-            for ws in wb.worksheets:
-                for row in ws.iter_rows(values_only=True):
-                    parts.extend(str(c) for c in row if c is not None)
-            return " ".join(parts).lower()
-        # 純文字
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read().lower()
-    except Exception:
-        return ""
-
-
 class SearchThread(QThread):
     """Thread for background file search."""
-    match_found = pyqtSignal(str, float, float, str)  # path, mtime, size, context
+    match_found = pyqtSignal(str, float, float)  # path, mtime, size
     progress = pyqtSignal(str)
     finished_signal = pyqtSignal(int)
 
-    def __init__(self, root_path, pattern, content_text, date_from, date_to, min_size, max_size):
+    def __init__(self, root_path, pattern, date_from, date_to, min_size, max_size):
         super().__init__()
         self.root_path = root_path
         self.pattern = pattern.lower()
-        self.content_text = content_text.lower()
         self.date_from = date_from # QDate
         self.date_to = date_to # QDate
         self.min_size = min_size
@@ -378,10 +313,12 @@ class SearchThread(QThread):
         for root, dirs, files in os.walk(self.root_path):
             if not self.is_running:
                 break
-                
+
+            dirs[:] = [d for d in dirs if d != '.git']
+
             self.progress.emit(f"正在搜尋: {root}")
-            
-            for name in files + dirs:
+
+            for name in files:
                 if not self.is_running:
                     break
                     
@@ -412,12 +349,7 @@ class SearchThread(QThread):
                     if self.date_to.isValid() and q_mtime > self.date_to:
                         continue
                         
-                    if self.content_text and os.path.isfile(full_path):
-                        if self.content_text not in _extract_text(full_path):
-                            continue
-                    
-                    ctx = _find_context(full_path, self.content_text) if self.content_text else ""
-                    self.match_found.emit(full_path, stats.st_mtime, stats.st_size, ctx)
+                    self.match_found.emit(full_path, stats.st_mtime, stats.st_size)
                     matches += 1
                 except:
                     continue

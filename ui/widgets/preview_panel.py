@@ -6,10 +6,10 @@ Renders:
                            QPixmap.fromImage() on main thread (near-zero cost)
   • text / source code   → Highlight.js (QWebEngineView)
   • PDF / .ai            → PyMuPDF first page
-  • CSV / XLSX / SQLite  → HTML table (first 15 rows)
-  • STL                  → Bounding box + volume (trimesh)
-  • STEP / STP           → Three.js + occt-import-js WASM
-  • SLDPRT / SLDASM      → OLE property table (olefile)
+  • CSV / XLSX           → HTML table (first 15 rows)
+  • audio                → metadata via mutagen
+  • fonts (TTF/OTF)      → base64 preview
+  • SVG / Markdown / ZIP → rendered or listed
 
 Architecture:
   Images: _ImageLoader (QThread) reads bytes + decodes QImage in background.
@@ -442,6 +442,9 @@ class PreviewPanel(QWidget):
             self._load_image_async(path)
         else:
             self._stop_image_loader()
+            if path != self._pending_path:
+                self._dpi_scale = 1.2
+                self.quality_changed.emit("SD")
             self._pending_path = path
             self._timer.start()
 

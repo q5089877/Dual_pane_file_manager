@@ -35,8 +35,7 @@ class AppSettingsDialog(QDialog):
 
         is_admin = self.config_mgr.is_admin_mode() if self.config_mgr else False
         tab_defs = [
-            (self._tab_appearance, "🎨 外觀"),
-            (self._tab_behavior,   "⚙️ 行為"),
+            (self._tab_behavior, "⚙️ 行為"),
         ]
         if is_admin:
             tab_defs.insert(1, (self._tab_index, "🔍 索引"))
@@ -87,21 +86,7 @@ class AppSettingsDialog(QDialog):
         sep.setFrameShape(QFrame.Shape.HLine)
         return sep
 
-    # ── Tab 1: 外觀 ────────────────────────────────────────────────────────────
-
-    def _tab_appearance(self, s: dict) -> QWidget:
-        w, f = self._form_widget()
-
-        self._restore_session_chk = QCheckBox(
-            self.config_mgr.get_text("ui_dialog_settings_restore_session", "啟動時還原上一次的分頁"))
-        self._restore_session_chk.setChecked(
-            s.get("restore_last_session", True))
-        f.addRow(self.config_mgr.get_text("ui_dialog_settings_label_startup", "啟動行為："),
-                 self._restore_session_chk)
-
-        return w
-
-    # ── Tab 2: 索引 ────────────────────────────────────────────────────────────
+    # ── Tab: 索引 ─────────────────────────────────────────────────────────────
 
     def _tab_index(self, s: dict) -> QWidget:
         outer = QWidget()
@@ -379,7 +364,6 @@ class AppSettingsDialog(QDialog):
                    for i in range(self._path_list.count())]
 
         self._config_mgr.save_app_settings({
-            "restore_last_session":  self._restore_session_chk.isChecked(),
             "remote_index_root":     self._remote_root_edit.text().strip(),
             "search_limit":          self._limit_spin.value(),
             "nightly_scan_hour":     self._hour_spin.value(),

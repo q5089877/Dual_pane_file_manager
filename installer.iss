@@ -1,7 +1,7 @@
 [Setup]
 AppId={{A7B8C9D0-E1F2-4A3B-8C5D-6E7F8A9B0C1D}
 AppName=DualPaneFileManager
-AppVersion=1.2.0
+AppVersion=1.3.0
 AppPublisher=SHL
 ; ?è¨­å®‰è???%USERPROFILE%\DevRepositories\SHL\DualPaneApp
 ; ç¬¦å??¬å¸è¦å?è·¯å?ï¼Œä½¿?¨è€…ä??¯åœ¨å®‰è??‚ä¿®??

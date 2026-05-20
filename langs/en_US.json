@@ -12,7 +12,7 @@
   "paste_prefix_text": "Text Note",
   "ui_dialog_search_title": "Advanced Search",
   "ui_dialog_search_placeholder": "Enter keywords (e.g., .pdf or filename)...",
-  "ui_dialog_search_network_share": "Network Share ({})",
+  "ui_dialog_search_network_share": "Network Share",
   "ui_dialog_search_local_global": "Local Global",
   "ui_dialog_search_settings": "⚙Settings",
   "ui_dialog_search_settings_tooltip": "Network index management and roles",
