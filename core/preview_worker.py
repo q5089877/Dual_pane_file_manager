@@ -395,14 +395,11 @@ def render_pdf(path: str, max_pages: int = 3, dpi_scale: float = 1.2) -> str:
             "              color: #89b4fa; border-radius: 12px; text-decoration: none; font-size: 11px; ",
             "              border: 1px solid rgba(88,166,255,0.4); cursor: pointer; white-space: nowrap; }",
             "  .open-btn:hover { background: rgba(88,166,255,0.45); color: #ffffff; }",
-            "  .page-adj { display:inline-block; padding:1px 7px; color:#89b4fa; text-decoration:none; font-size:15px; cursor:pointer; border-radius:8px; line-height:1; }",
-            "  .page-adj:hover { background: rgba(88,166,255,0.3); }",
-            "  .page-count { min-width:32px; text-align:center; display:inline-block; }",
             "  .pdf-page { width: 95%; max-width: 900px; height: auto; display: block; margin: 15px auto 20px auto; background-color: white; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); border-radius: 2px; }",
             "</style>"
         ]
 
-        # 2. 顯示檔案資訊橫幅 (置頂) + 頁數調整 + 開啟按鈕
+        # 2. 顯示檔案資訊橫幅 (置頂) + 開啟按鈕
         info_line = f"📄 {total_pages} 頁 | {file_size_str}"
         pdf_icon_svg = (
             '<svg width="14" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right:6px;">'
@@ -411,16 +408,8 @@ def render_pdf(path: str, max_pages: int = 3, dpi_scale: float = 1.2) -> str:
             '<text x="12" y="17" fill="white" font-size="7" font-family="Arial, sans-serif" font-weight="900" text-anchor="middle">PDF</text>'
             '</svg>'
         )
-        if limit >= total_pages:
-            pages_ctrl = f'<span class="page-count">全部 {total_pages} 頁</span>'
-        else:
-            pages_ctrl = (
-                f'<a class="page-adj" href="app://pages-dec">‹</a>'
-                f'<span class="page-count">{limit} 頁</span>'
-                f'<a class="page-adj" href="app://pages-inc">›</a>'
-            )
         open_btn = f'<a class="open-btn" href="app://open" style="display:inline-flex;align-items:center;">{pdf_icon_svg}開啟</a>'
-        html_parts.append(f'<div style="width:100%; height:0; overflow:visible; position:relative; z-index:1000;"><div class="pdf-info-badge"><span>{info_line}</span>{pages_ctrl}{open_btn}</div></div>')
+        html_parts.append(f'<div style="width:100%; height:0; overflow:visible; position:relative; z-index:1000;"><div class="pdf-info-badge"><span>{info_line}</span>{open_btn}</div></div>')
 
         # 3. 迴圈渲染頁面
         rendered_count = 0

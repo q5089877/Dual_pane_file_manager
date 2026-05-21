@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QToolButton, QPushButton,
     QStackedWidget, QMessageBox, QLabel, QFrame, QTreeView,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QDir, QThread, QSortFilterProxyModel, QTimer, QPoint, pyqtSlot, QDateTime, QDate
+from PyQt6.QtCore import Qt, pyqtSignal, QDir, QThread, QSortFilterProxyModel, QTimer, QPoint, QDateTime, QDate
 from PyQt6.QtGui import QFileSystemModel, QIcon, QStandardItemModel, QStandardItem
 
 import shutil
@@ -657,20 +657,6 @@ class ExplorerPane(QWidget):
         self.close_preview_btn.clicked.connect(
             self.close_preview_requested.emit)
 
-        self.quality_toggle_btn = QToolButton()
-        self.quality_toggle_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.quality_toggle_btn.setObjectName("qualityToggleBtn")
-        self.quality_toggle_btn.setToolTip("SD：快速預覽前 N 頁　HD：高畫質顯示全部頁數")
-        self.quality_toggle_btn.setVisible(False)
-        self.quality_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.update_quality_btn("SD") # 初始化
-
-        self.quality_separator = QFrame()
-        self.quality_separator.setFrameShape(QFrame.Shape.VLine)
-        self.quality_separator.setFrameShadow(QFrame.Shadow.Plain)
-        self.quality_separator.setObjectName("qualitySeparator")
-        self.quality_separator.setVisible(False)
-
         nav_layout.addWidget(self.back_btn)
         nav_layout.addWidget(self.forward_btn)
         nav_layout.addWidget(self.up_btn)
@@ -681,8 +667,6 @@ class ExplorerPane(QWidget):
         nav_layout.addWidget(self.adv_search_btn)
         nav_layout.addWidget(self.list_view_btn)
         nav_layout.addWidget(self.grid_view_btn)
-        nav_layout.addWidget(self.quality_toggle_btn)
-        nav_layout.addWidget(self.quality_separator)
         nav_layout.addWidget(self.close_preview_btn)
 
         layout.addLayout(nav_layout)
@@ -846,16 +830,9 @@ class ExplorerPane(QWidget):
         # 確保初始狀態的按鈕文字與顯示模式正確同步
         self.set_view_mode(self._current_mode)
 
-    def set_preview_mode(self, active: bool, is_pdf: bool = False) -> None:
+    def set_preview_mode(self, active: bool) -> None:
         """Show/hide the [X] close preview button and guard enterEvent focus-steal."""
         self.close_preview_btn.setVisible(active)
-        if active and is_pdf:
-            self.quality_toggle_btn.setVisible(True)
-            self.quality_separator.setVisible(True)
-        else:
-            self.quality_toggle_btn.setVisible(False)
-            self.quality_separator.setVisible(False)
-        
         self._in_preview_mode = active
 
         # UI optimization: Hide general navigation widgets during preview
@@ -937,17 +914,6 @@ class ExplorerPane(QWidget):
     def set_path(self, path):
         # 對外介面: mainWindow 取用 set_path 來調度
         self.presenter.navigate_to(path)
-
-    @pyqtSlot(str)
-    def update_quality_btn(self, quality: str) -> None:
-        if quality == "HD":
-            self.quality_toggle_btn.setText(" HD 全頁數查看")
-        else:
-            self.quality_toggle_btn.setText(" 流暢 (SD)")
-        
-        self.quality_toggle_btn.setProperty("quality", quality)
-        self.quality_toggle_btn.style().unpolish(self.quality_toggle_btn)
-        self.quality_toggle_btn.style().polish(self.quality_toggle_btn)
 
     def _internal_set_display_path(self, path: str) -> None:
         self._current_path = path
@@ -1331,6 +1297,9 @@ class ExplorerPane(QWidget):
 
     def create_new_folder(self):
         self.presenter.handle_create_folder()
+
+    def create_new_text_file(self):
+        self.presenter.handle_create_text_file()
 
     def refresh(self):
         path = self.path_edit.text()

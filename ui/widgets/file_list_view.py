@@ -206,6 +206,7 @@ class FileListView(BaseFileView, QListView):
 
         else:
             menu.addAction(self._t("ui_main_dialog_new_folder", "新增資料夾") + " (F7)").triggered.connect(lambda: self.parent().parent().create_new_folder())
+            menu.addAction(self._t("ui_ctx_new_text_file", "新增文字檔")).triggered.connect(lambda: self.parent().parent().create_new_text_file())
             menu.addAction(self._t("ui_main_action_refresh", "重新整理") + " (F5)").triggered.connect(lambda: self.parent().parent().refresh())
             if has_paste:
                 menu.addSeparator()

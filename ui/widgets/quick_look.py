@@ -23,7 +23,6 @@ class QuickLookDialog(QDialog):
         self.file_path = file_path
         self.config_mgr = config_mgr
         self._current_worker = None
-        self._dpi_scale = 1.2  # 預設 SD 模式
         self._init_ui()
         self._load_preview()
 
@@ -66,43 +65,13 @@ class QuickLookDialog(QDialog):
         header.addWidget(self.title_label)
         
         header.addStretch()
-        
+
         self.close_hint = QLabel("Press Space or Esc to close")
         accent_color = "#3498db"
         if self.config_mgr:
             accent_color = self.config_mgr.get_theme_colors().get("accent", accent_color)
         self.close_hint.setStyleSheet(f"color: {accent_color}; font-size: 13px; font-weight: bold;")
         header.addWidget(self.close_hint)
-        
-        # Quality Toggle Button (Only for PDF)
-        self.quality_btn = QPushButton("SD")
-        self.quality_btn.setFixedSize(45, 30)
-        self.quality_btn.setToolTip(
-            self.config_mgr.get_text("ui_quicklook_quality_tooltip", "切換解析度 (SD / HD)")
-            if self.config_mgr else "切換解析度 (SD / HD)"
-        )
-        self.quality_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.quality_btn.setVisible(False)
-        self.quality_btn.clicked.connect(self._on_quality_toggle)
-        
-        quality_qss = """
-            QPushButton {
-                background-color: {{surfaceSubtle}};
-                color: {{accent}};
-                border-radius: 15px;
-                font-size: 12px;
-                font-weight: bold;
-                border: 1px solid {{accent}};
-            }
-            QPushButton:hover {
-                background-color: {{headerBg}};
-                color: white;
-            }
-        """
-        if self.config_mgr:
-            quality_qss = self.config_mgr.apply_theme_to_text(quality_qss)
-        self.quality_btn.setStyleSheet(quality_qss)
-        header.addWidget(self.quality_btn)
 
         # Clickable Close Button
         self.close_btn = QPushButton("×")
@@ -186,10 +155,6 @@ class QuickLookDialog(QDialog):
 
     def _load_preview(self):
         ext = os.path.splitext(self.file_path)[1].lower()
-        
-        # Show/Hide quality button based on type
-        from core.preview_worker import PDF_EXTS
-        self.quality_btn.setVisible(ext in PDF_EXTS)
 
         # 1. Cloud Check: Immediate feedback if it's offline
         try:
@@ -270,7 +235,7 @@ class QuickLookDialog(QDialog):
         
         from ui.workers.preview_thread import PreviewThread
         _pdf_max = self.config_mgr.load_config().get("pdf_preview_max_pages", 3) if self.config_mgr else 3
-        self._current_worker = PreviewThread(self.file_path, pdf_max_pages=_pdf_max, pdf_dpi=self._dpi_scale)
+        self._current_worker = PreviewThread(self.file_path, pdf_max_pages=_pdf_max, pdf_dpi=1.2)
         self._current_worker.html_ready.connect(self._on_preview_ready)
         self._current_worker.error.connect(self._on_preview_error)
         self._current_worker.start()
@@ -360,17 +325,6 @@ class QuickLookDialog(QDialog):
         else:
             self.image_label.setText("No preview available for this file type")
             self.stack.setCurrentWidget(self.image_label)
-
-    def _on_quality_toggle(self):
-        """Toggle between SD (1.2) and HD (2.5) and re-render."""
-        if self._dpi_scale < 2.0:
-            self._dpi_scale = 2.5
-            self.quality_btn.setText("HD")
-        else:
-            self._dpi_scale = 1.2
-            self.quality_btn.setText("SD")
-        
-        self._start_async_worker()
 
     def closeEvent(self, event):
         self._stop_current_worker()

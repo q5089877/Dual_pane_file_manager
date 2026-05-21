@@ -65,6 +65,7 @@ All primary operations are keyboard-accessible:
 | `F4` / `C` | Copy to opposite pane |
 | `F5` | Refresh |
 | `F7` | New folder |
+| Right-click → New Text File | Create empty `.txt` in current folder |
 | `Del` | Send to Recycle Bin |
 | `Shift+Del` | Permanently delete |
 | `Ctrl+C / X / V` | System clipboard copy / cut / paste |
@@ -92,7 +93,7 @@ Press `Space` to open the preview panel, or `Space` again for a full-screen Quic
 | Format | How it renders |
 |--------|---------------|
 | Images (JPG, PNG, BMP, GIF…) | Decoded in background thread — no UI freeze |
-| PDF / `.ai` | PyMuPDF · configurable page count · SD / HD quality toggle |
+| PDF / `.ai` | PyMuPDF · configurable page count (SD mode) |
 | Text / source code | Highlight.js syntax highlighting via WebEngine |
 | CSV / XLSX | HTML table — first 15 rows |
 | ZIP / 7z | File listing |

@@ -119,6 +119,23 @@ class ExplorerPresenter:
         except Exception as e:
             self.view.show_error(str(e))
 
+    def handle_create_text_file(self):
+        root = self.view.get_current_path()
+        if not root or not os.path.exists(root):
+            return
+        base = self.config_model.get_text("ui_explorer_new_text_file_base", "新文字文件") if self.config_model else "新文字文件"
+        path = os.path.join(root, f"{base}.txt")
+        counter = 2
+        while os.path.exists(path):
+            path = os.path.join(root, f"{base} ({counter}).txt")
+            counter += 1
+        try:
+            open(path, "w", encoding="utf-8").close()
+            self.view.focus_item(path)
+            self.view.notify_operation_finished()
+        except Exception as e:
+            self.view.show_error(str(e))
+
     def handle_double_click(self, path: str, is_dir: bool):
         if not path or not os.path.exists(path):
             return

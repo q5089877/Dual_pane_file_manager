@@ -832,13 +832,6 @@ class MainWindow(
             from ui.widgets.preview_panel import PreviewPanel
             panel = PreviewPanel(self.config_mgr)
             panel.action_requested.connect(self._on_preview_action)
-
-            # 連接 ExplorerPane 上的按鈕與 PreviewPanel 的解析度切換
-            if hasattr(target, 'quality_toggle_btn'):
-                target.quality_toggle_btn.clicked.connect(
-                    panel._toggle_quality)
-                panel.quality_changed.connect(target.update_quality_btn)
-
             target.view_stack.addWidget(panel)
             self._preview_panels[target] = panel
         panel = self._preview_panels[target]
@@ -854,15 +847,11 @@ class MainWindow(
             self._preview_source_pane.set_previewing_path(path)
         panel.preview_file(path)
 
-        from core.preview_worker import PDF_EXTS
-        ext = os.path.splitext(path)[1].lower()
-        is_pdf = ext in PDF_EXTS
-
         # Batch all visual changes into one repaint to prevent opacity/content flash
         self.centralWidget().setUpdatesEnabled(False)
         try:
             target.view_stack.setCurrentWidget(panel)
-            target.set_preview_mode(True, is_pdf)
+            target.set_preview_mode(True)
             # Use _active_side to dim correctly when source may be a search tab
             src_tabs = self.left_tabs if self._active_side == "left" else self.right_tabs
             self.set_active_pane(src_tabs.currentWidget())
@@ -922,9 +911,7 @@ class MainWindow(
         if path and os.path.isfile(path) and self._preview_target_pane in self._preview_panels:
             self._preview_source_pane.set_previewing_path(path)
             self._preview_panels[self._preview_target_pane].preview_file(path)
-            from core.preview_worker import PDF_EXTS
-            is_pdf = os.path.splitext(path)[1].lower() in PDF_EXTS
-            self._preview_target_pane.set_preview_mode(True, is_pdf)
+            self._preview_target_pane.set_preview_mode(True)
 
     def _on_preview_source_path_changed(self, _path: str) -> None:
         self.close_inline_preview()

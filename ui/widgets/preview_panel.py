@@ -21,7 +21,6 @@ Architecture:
 from __future__ import annotations
 import locale
 import os
-import shutil
 import tempfile
 import logging
 
@@ -62,11 +61,6 @@ class _PreviewPage(QWebEnginePage if _HAS_WEBENGINE else object):
             if path and os.path.isfile(path):
                 os.startfile(path)
             return False  # block navigation
-
-        if url.scheme() == "app" and url.host() in ("pages-inc", "pages-dec"):
-            delta = +1 if url.host() == "pages-inc" else -1
-            self._panel._adjust_pdf_pages(delta)
-            return False
 
         # Intercept custom fspath: links (used by cloud placeholder download button)
         if url.scheme() == "fspath":
@@ -218,7 +212,6 @@ class PreviewPanel(QWidget):
 
     # Forward the action request to the outside world
     action_requested = pyqtSignal(str, str)  # action, current_path
-    quality_changed = pyqtSignal(str)
 
     DEBOUNCE_MS = 150
     # kill worker if it hangs > 20 s (e.g. PyMuPDF on bad PDF)
@@ -237,7 +230,6 @@ class PreviewPanel(QWidget):
         self._image_qimg: QImage | None = None
         self._image_loader: _ImageLoader | None = None
         self._current_worker: PreviewThread | None = None
-        self._dpi_scale = 1.2  # 預設 SD 模式
 
         # ── edit mode state ──────────────────────────────────────────────────
         self._is_editing: bool = False
@@ -369,30 +361,6 @@ class PreviewPanel(QWidget):
                 action, self._pending_path or self._current_image_path)
         )
 
-    def _adjust_pdf_pages(self, delta: int) -> None:
-        if not self.config_mgr or self._dpi_scale >= 2.0:
-            return
-        cfg = self.config_mgr.load_config()
-        current = cfg.get("pdf_preview_max_pages", 3)
-        new_val = max(1, min(20, current + delta))
-        if new_val == current:
-            return
-        self.config_mgr.save_config(pdf_preview_max_pages=new_val)
-        if self._pending_path:
-            self._start_worker()
-
-    @pyqtSlot()
-    def _toggle_quality(self) -> None:
-        if self._dpi_scale < 2.0:
-            self._dpi_scale = 2.5
-            self.quality_changed.emit("HD")
-        else:
-            self._dpi_scale = 1.2
-            self.quality_changed.emit("SD")
-            
-        if self._pending_path:
-            self._start_worker()
-
     # ── public API ────────────────────────────────────────────────────────────
 
     def preview_file(self, path: str) -> None:
@@ -442,9 +410,6 @@ class PreviewPanel(QWidget):
             self._load_image_async(path)
         else:
             self._stop_image_loader()
-            if path != self._pending_path:
-                self._dpi_scale = 1.2
-                self.quality_changed.emit("SD")
             self._pending_path = path
             self._timer.start()
 
@@ -649,10 +614,10 @@ class PreviewPanel(QWidget):
         if ext not in {".pdf", ".ai"}:
             self._show_loading()
         _cfg = self.config_mgr.load_config() if self.config_mgr else {}
-        _pdf_max = 9999 if self._dpi_scale >= 2.0 else _cfg.get("pdf_preview_max_pages", 3)
+        _pdf_max = _cfg.get("pdf_preview_max_pages", 3)
         _font_size = _cfg.get("preview_font_size", 14)
         self._current_worker = PreviewThread(
-            self._pending_path, pdf_max_pages=_pdf_max, font_size=_font_size, pdf_dpi=self._dpi_scale, parent=self)
+            self._pending_path, pdf_max_pages=_pdf_max, font_size=_font_size, pdf_dpi=1.2, parent=self)
         self._current_worker.html_ready.connect(self._on_html_ready)
         self._current_worker.error.connect(self._on_error)
         self._current_worker.finished.connect(self._on_worker_finished)
