@@ -7,6 +7,14 @@
 
 ---
 
+## 截圖
+
+| 搜尋 + 圖片預覽 | 樹狀圖 + 程式碼預覽 | 雙欄瀏覽 |
+|:---:|:---:|:---:|
+| ![搜尋與圖片預覽](docs/screenshots/01_search_image_preview.jpg) | ![樹狀圖搭配程式碼預覽](docs/screenshots/02_tree_code_preview.png) | ![雙欄 Windows 目錄](docs/screenshots/03_dual_pane_windows.png) |
+
+---
+
 ## 為什麼要做這個工具
 
 Windows 檔案總管應付日常使用綽綽有餘，但當你需要頻繁在專案資料夾間跳轉、跨 NAS 複製檔案、或追查上週改動的某個檔案時，它就顯得力不從心。

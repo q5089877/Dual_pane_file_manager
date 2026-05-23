@@ -7,6 +7,14 @@
 
 ---
 
+## Screenshots
+
+| Search + Image Preview | Tree View + Code Preview | Dual-Pane Navigation |
+|:---:|:---:|:---:|
+| ![Search and image preview](docs/screenshots/01_search_image_preview.jpg) | ![Tree view with code preview](docs/screenshots/02_tree_code_preview.png) | ![Dual pane Windows directory](docs/screenshots/03_dual_pane_windows.png) |
+
+---
+
 ## Why this exists
 
 Windows Explorer works fine for casual use. But when you're constantly jumping between project folders, copying files across a NAS, or hunting for a file you touched last week — it falls short.
