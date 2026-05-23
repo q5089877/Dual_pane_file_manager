@@ -81,3 +81,7 @@ Thumbs.db
 desktop.ini
 .DS_Store
 DualPaneFileManager-portable.zip
+DualPaneFileManager-v*.zip
+*.tmp
+*.tmp.*
+ui/windows/_internal/
