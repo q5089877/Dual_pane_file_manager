@@ -33,8 +33,16 @@ class _MwFileOpsMixin:
             )
 
     def on_quick_access_clicked(self, path):
-        if self.active_pane:
-            self.active_pane.set_path(path)
+        if not self.active_pane:
+            return
+        if not os.path.isdir(path):
+            self.show_toast(
+                self.config_mgr.get_text(
+                    "ui_favorites_path_not_found",
+                    f"路徑不存在：{path}"),
+                "error")
+            return
+        self.active_pane.set_path(path)
 
     def show_drive_selection(self, side):
         """彈出磁碟選單"""

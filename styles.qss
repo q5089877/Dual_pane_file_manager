@@ -179,7 +179,19 @@ ExplorerPane#inactivePane QListView::item:selected {
     color: {{textMuted}};
 }
 
-/* 4. 徹底修正：不准出現儲存格級別的橘色框 */
+/* 4. 對話框內 QListWidget 選取樣式 */
+QDialog QListWidget::item:selected {
+    background-color: {{accentSubtle}};
+    border: 1px solid {{accentBorder}};
+    border-radius: 6px;
+    color: {{text}};
+}
+QDialog QListWidget::item:hover:!selected {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+}
+
+/* 5. 徹底修正：不准出現儲存格級別的橘色框 */
 QTreeView:focus, QListView:focus {
     outline: none;
     border: none;

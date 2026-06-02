@@ -403,6 +403,7 @@ class MainWindow(
         pane.close_preview_requested.connect(self.close_inline_preview)
         pane.home_requested.connect(lambda p=pane: p.set_path(HOME_PATH))
         pane.custom_paths_requested.connect(self._show_favorites_menu_at)
+        pane.path_changed.connect(self._record_recent_folder)
 
         tab_label = self.config_mgr.get_text("ui_pane_label_home", "本機") if path == HOME_PATH else (
             os.path.basename(path) or path or self.config_mgr.get_text("ui_pane_label_home", "本機"))

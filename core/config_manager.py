@@ -7,7 +7,7 @@ from pathlib import Path
 
 class ConfigManager:
     """Handles application configuration and theme loading."""
-    APP_VERSION = "1.3.0"
+    APP_VERSION = "1.4.0"
     GITHUB_REPO  = "q5089877/Dual_pane_file_manager"
     _DEFAULT_UPDATE_SUFFIX = ""
     _DEFAULT_REMOTE_INDEX_SUFFIX = ""
@@ -38,6 +38,7 @@ class ConfigManager:
             self.config_file = self.config_dir / "config.json"
             self.is_portable = False
 
+        self.favorites_file = self.config_dir / "favorites.json"
         self.app_name = app_name
         self.lang_data = {}
 
@@ -369,11 +370,47 @@ class ConfigManager:
     # ── Favorites ─────────────────────────────────────────────────────────────
 
     def get_favorites(self) -> list[dict]:
-        return self.load_config().get("favorites", [])
+        if self.favorites_file.exists():
+            try:
+                with open(self.favorites_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return []
+        # One-time migration from config.json
+        legacy = self.load_config().get("favorites")
+        if legacy is not None:
+            self.save_favorites(legacy)
+            config = self.load_config()
+            config.pop("favorites", None)
+            try:
+                with open(self.config_file, "w", encoding="utf-8") as f:
+                    json.dump(config, f, ensure_ascii=False, indent=4)
+            except Exception:
+                pass
+            return legacy
+        return []
 
     def save_favorites(self, favorites: list[dict]) -> None:
+        self.favorites_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(self.favorites_file, "w", encoding="utf-8") as f:
+                json.dump(favorites, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
+
+    # ── Recent Folders ────────────────────────────────────────────────────────
+
+    def get_recent_folders(self) -> list[str]:
+        return self.load_config().get("recent_folders", [])
+
+    def add_recent_folder(self, path: str, max_count: int = 15) -> None:
         config = self.load_config()
-        config["favorites"] = favorites
+        recents: list[str] = config.get("recent_folders", [])
+        norm = os.path.normcase(os.path.normpath(path))
+        recents = [p for p in recents
+                   if os.path.normcase(os.path.normpath(p)) != norm]
+        recents.insert(0, path)
+        config["recent_folders"] = recents[:max_count]
         try:
             with open(self.config_file, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=4)
